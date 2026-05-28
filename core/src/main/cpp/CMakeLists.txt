@@ -55,14 +55,22 @@ set(LLAMA_BUILD_HTML      OFF CACHE BOOL "" FORCE)
 # in the published JAR.
 set(LLAMA_OPENSSL         OFF CACHE BOOL "" FORCE)
 
-# CPU-only on Intel Mac. Accelerate is fast and present on every macOS.
+# CPU-only across all platforms (no GPU backends). Apple gets the Accelerate
+# BLAS backend (present on every macOS, fast); other platforms run plain CPU
+# — portable, no external BLAS dependency for the multi-platform release.
+# (OpenBLAS can be added per-OS later for a throughput bump.)
 set(GGML_METAL            OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA             OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN           OFF CACHE BOOL "" FORCE)
 set(GGML_HIP              OFF CACHE BOOL "" FORCE)
-set(GGML_ACCELERATE       ON  CACHE BOOL "" FORCE)
-set(GGML_BLAS             ON  CACHE BOOL "" FORCE)
-set(GGML_BLAS_VENDOR      "Apple" CACHE STRING "" FORCE)
+if(APPLE)
+    set(GGML_ACCELERATE   ON  CACHE BOOL "" FORCE)
+    set(GGML_BLAS         ON  CACHE BOOL "" FORCE)
+    set(GGML_BLAS_VENDOR  "Apple" CACHE STRING "" FORCE)
+else()
+    set(GGML_ACCELERATE   OFF CACHE BOOL "" FORCE)
+    set(GGML_BLAS         OFF CACHE BOOL "" FORCE)
+endif()
 
 # Vendored llama.cpp lives next to the bridge source under src/main/native.
 set(LLAMA_CPP_DIR "${CMAKE_SOURCE_DIR}/../native/llama.cpp"
@@ -106,10 +114,19 @@ target_compile_definitions(llamabridge PRIVATE
 # common/CMakeLists.txt). It pulls in ggml transitively via llama.
 target_link_libraries(llamabridge PRIVATE llama llama-common)
 
-# Resolve sibling dylibs (libllama, libggml*) at runtime from the same
-# directory as libllamabridge.dylib — that's where Gradle drops them.
-set_target_properties(llamabridge PROPERTIES
-    INSTALL_RPATH           "@loader_path"
-    BUILD_WITH_INSTALL_RPATH TRUE
-    MACOSX_RPATH             TRUE
-)
+# Resolve sibling shared libs (llama, ggml*) at runtime from the same
+# directory as the bridge — that's where Gradle/CI stage them. rpath syntax
+# is per-OS: macOS uses @loader_path, Linux uses $ORIGIN, Windows resolves
+# DLLs from the executable/library directory + PATH (no rpath concept).
+if(APPLE)
+    set_target_properties(llamabridge PROPERTIES
+        INSTALL_RPATH            "@loader_path"
+        BUILD_WITH_INSTALL_RPATH TRUE
+        MACOSX_RPATH             TRUE
+    )
+elseif(UNIX)
+    set_target_properties(llamabridge PROPERTIES
+        INSTALL_RPATH            "$ORIGIN"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
