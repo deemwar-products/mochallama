@@ -1,0 +1,2 @@
+rootProject.name = 'mochallama'
+include 'core', 'starter', 'spring-ai', 'app', 'cli'

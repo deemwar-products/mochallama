@@ -1,0 +1,56 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Docs ###
+# Promotion notes are internal — not committed/published
+docs/promotion/
+
+### Native build ###
+# Vendored llama.cpp upstream — re-clone via Gradle/CMake
+core/src/main/native/llama.cpp/
+# Generated dylibs are produced by `./gradlew :core:buildNative`
+core/src/main/resources/native/*/*.dylib
+core/src/main/resources/native/*/*.metallib
+
+### Release / distribution build output ###
+# jlink runtime image (Badass Runtime) — produced by `./gradlew :cli:jlink`
+cli/build/
+# npm wrapper: the jlink image is copied in at pack time, plus pack output
+cli/npm/image/
+cli/npm/*.tgz
+cli/npm/node_modules/

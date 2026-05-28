@@ -1,0 +1,31 @@
+// Root build script — multi-project configuration only.
+// Per-subproject plugins (Spring Boot, java-library, etc.) live in core/ and app/.
+
+allprojects {
+    group = 'tools.deemwar'
+    version = '0.1.0-SNAPSHOT'
+}
+
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(22)
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += ['--add-modules=jdk.incubator.vector']
+    }
+
+    tasks.withType(Test).configureEach {
+        jvmArgs '--add-modules=jdk.incubator.vector',
+                '--enable-native-access=ALL-UNNAMED'
+        useJUnitPlatform()
+    }
+}

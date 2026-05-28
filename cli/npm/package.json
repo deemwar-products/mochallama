@@ -1,0 +1,43 @@
+{
+  "name": "@deemwar/mochallama",
+  "version": "0.1.0",
+  "description": "Run a local llama.cpp LLM from the terminal — JVM-powered (Project Panama FFM), shipped as a self-contained jlink runtime image. macOS x64 only for v0.1.0.",
+  "bin": {
+    "mochallama": "bin/mochallama.js"
+  },
+  "files": [
+    "bin",
+    "image",
+    "README.md"
+  ],
+  "keywords": [
+    "llama",
+    "llama.cpp",
+    "llm",
+    "local-llm",
+    "cli",
+    "jvm",
+    "panama",
+    "ffm"
+  ],
+  "author": "deemwar <io@deemwar.com>",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/deemwar-products/mochallama",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deemwar-products/mochallama.git"
+  },
+  "bugs": {
+    "url": "https://github.com/deemwar-products/mochallama/issues"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "//os-cpu-note": "v0.1.0 bundles a macOS x64 jlink image (native llama.cpp dylibs are darwin-x86_64). The os/cpu fields below make npm refuse installs on unsupported platforms instead of silently shipping a broken binary. Additional platforms will publish as separate image bundles later.",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ]
+}

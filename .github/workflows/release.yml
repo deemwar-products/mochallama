@@ -1,0 +1,172 @@
+# Release: tag-driven multi-platform native build + fat JAR publish.
+#
+# Triggered on tags matching v*.*.* — builds natives across the same matrix
+# as build.yml, then a single `assemble` job downloads every platform's
+# natives, stages them under src/main/resources/native/, runs `bootJar`,
+# and attaches the result to a GitHub Release.
+#
+# TODO: code signing / notarization / Maven Central publishing are out of
+# scope for now. Add them once the basic release pipeline is green.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  native:
+    name: native (${{ matrix.native_dir }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            native_dir: linux-x86_64
+            experimental: false
+          # TODO: drop to macos-latest + self-hosted Intel runner once
+          # macos-13 is retired by GitHub.
+          - os: macos-13
+            native_dir: darwin-x86_64
+            experimental: false
+          - os: macos-14
+            native_dir: darwin-aarch64
+            experimental: false
+          # TODO: see build.yml — Windows CMake needs cleanup.
+          - os: windows-latest
+            native_dir: windows-x86_64
+            experimental: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Set up MSVC (Windows only)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Clone vendored llama.cpp (pinned tag b9371)
+        shell: bash
+        run: |
+          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp src/main/native/llama.cpp
+
+      - name: Build native (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew buildNative --no-daemon --stacktrace
+
+      - name: Build native (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat buildNative --no-daemon --stacktrace
+
+      - name: Stage native artifacts into platform dir
+        shell: bash
+        run: |
+          set -eu
+          dest="src/main/resources/native/${{ matrix.native_dir }}"
+          mkdir -p "$dest"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            find build/native-cmake -maxdepth 3 -type f \( -name '*.so' -o -name '*.so.*' \) -print -exec cp -P {} "$dest/" \; || true
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            find build/native-cmake -maxdepth 3 -type f \( -name '*.dll' -o -name '*.lib' \) -print -exec cp -P {} "$dest/" \; || true
+          else
+            if [ "${{ matrix.native_dir }}" = "darwin-aarch64" ] && [ -d "src/main/resources/native/darwin-x86_64" ]; then
+              mkdir -p "$dest"
+              cp -R src/main/resources/native/darwin-x86_64/. "$dest/"
+            fi
+          fi
+          echo "Contents of $dest:"
+          ls -la "$dest" || true
+
+      - name: Upload native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.native_dir }}
+          path: src/main/resources/native/${{ matrix.native_dir }}/
+          if-no-files-found: warn
+          retention-days: 30
+
+  assemble:
+    name: assemble fat JAR + publish release
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Clone vendored llama.cpp (pinned tag b9371)
+        shell: bash
+        run: |
+          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp src/main/native/llama.cpp
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: native-artifacts
+          pattern: native-*
+
+      - name: Stage natives under src/main/resources/native/
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p src/main/resources/native
+          for d in native-artifacts/native-*; do
+            name="$(basename "$d" | sed 's/^native-//')"
+            mkdir -p "src/main/resources/native/$name"
+            cp -R "$d/." "src/main/resources/native/$name/"
+          done
+          echo "Staged native layout:"
+          find src/main/resources/native -maxdepth 2 -type f | sort
+
+      - name: Assemble fat JAR
+        # bootJar depends on processResources -> buildNative; the local
+        # buildNative will re-stage the host's natives, but the
+        # already-downloaded cross-platform natives stay in place because
+        # buildNative only touches darwin-x86_64.
+        run: ./gradlew bootJar --no-daemon --stacktrace
+
+      - name: Upload fat JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mochallama-${{ github.ref_name }}
+          path: build/libs/*.jar
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            build/libs/*.jar

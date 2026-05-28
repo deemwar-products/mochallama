@@ -1,0 +1,77 @@
+plugins {
+    id 'application'
+    // Custom jlink runtime image (trimmed JRE + launcher) for the CLI.
+    //
+    // NOTE: we use Badass *Runtime* (org.beryx.runtime), NOT Badass *JLink*.
+    // The JLink plugin requires the APPLICATION ITSELF to be modular (it needs a
+    // module-info.java and only merges non-modular *dependencies*). The CLI + core
+    // are fully non-modular (classpath), so JLink fails at prepareModulesDir with
+    // "Cannot find module-info.java". Badass Runtime is the supported plugin for
+    // non-modular / classpath apps: it runs jlink to build a slim runtime image,
+    // then drops the app jars on the classpath with a generated launcher.
+    //
+    // Version: 2.0.1 is current (Nov 2025) but, like JLink 4.x, requires a newer
+    // Gradle than this project's pinned 8.8 — so we use 1.13.1, which supports
+    // Gradle 8.x. Bump together with the Gradle wrapper.
+    id 'org.beryx.runtime' version '1.13.1'
+}
+
+description = 'mochallama-cli: Picocli command-line chat over mochallama-core. No Spring.'
+
+dependencies {
+    implementation project(':core')
+    implementation 'info.picocli:picocli:4.7.7'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.7'
+}
+
+tasks.named('compileJava') {
+    options.compilerArgs += ['-Aproject=cli']
+}
+
+application {
+    mainClass = 'tools.deemwar.mochallama.cli.MochallamaCli'
+    // Badass Runtime derives the runtime-image launcher name from applicationName,
+    // so the jlink image launcher is bin/mochallama (matches the `gradlew :cli:run`
+    // distribution name too).
+    applicationName = 'mochallama'
+    applicationDefaultJvmArgs = [
+            '--enable-native-access=ALL-UNNAMED',
+            '--add-modules=jdk.incubator.vector'
+    ]
+}
+
+// ---------------------------------------------------------------------
+// jlink runtime image at cli/build/image/ (Badass Runtime).
+//   ./gradlew :cli:runtime  ->  cli/build/image/bin/mochallama
+// ---------------------------------------------------------------------
+runtime {
+    // strip-debug + zip compression keep the trimmed JRE lean; no header
+    // files or man pages in a distributable.
+    options = ['--strip-debug', '--compress', 'zip-6', '--no-header-files', '--no-man-pages']
+
+    // The CLI is non-modular, so jdeps can't infer everything it touches
+    // through reflection / FFM. Pin the JDK modules we actually need:
+    //   java.base       — FFM (Panama) lives here
+    //   jdk.incubator.vector — ChatEngine's SIMD path
+    //   java.logging    — JUL used transitively
+    //   jdk.unsupported — guards libs touching sun.misc / internal APIs
+    modules = ['java.base', 'java.logging', 'jdk.incubator.vector', 'jdk.unsupported']
+
+    // Launcher name comes from application.applicationName ('mochallama').
+    // These JVM args land in the generated bin/mochallama script — FFM needs
+    // native access, ChatEngine's SIMD path needs the incubator vector module.
+    launcher {
+        jvmArgs = [
+                '--enable-native-access=ALL-UNNAMED',
+                '--add-modules=jdk.incubator.vector'
+        ]
+    }
+}
+
+// Badass Runtime's image task is named `runtime`; alias `jlink` to it so the
+// conventional name (and the root Taskfile's `cli:image`) works either way.
+tasks.register('jlink') {
+    group = 'distribution'
+    description = 'Alias for the Badass Runtime `runtime` task — builds the jlink image at build/image/.'
+    dependsOn tasks.named('runtime')
+}

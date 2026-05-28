@@ -1,0 +1,65 @@
+plugins {
+    id 'application'
+    id 'org.springframework.boot' version '3.3.1'
+    id 'io.spring.dependency-management' version '1.1.5'
+    id 'org.graalvm.buildtools.native' version '0.10.2'
+}
+
+description = 'mochallama demo app — Spring Boot service consuming mochallama-core.'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    // Spring AI 1.0 GA artifacts ship on Maven Central.
+    mavenCentral()
+}
+
+ext {
+    springAiVersion = '1.0.8'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+    }
+}
+
+dependencies {
+    // The reusable, version-neutral libraries. LlamaCppService + the
+    // OpenAI-compatible endpoint arrive via the starter's auto-config; the
+    // Spring AI ChatModel/ChatClient arrive via the spring-ai adapter's
+    // auto-config (it only activates because the app pins spring-ai-core below).
+    implementation project(':starter')
+    implementation project(':spring-ai')
+
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    // The app — being a concrete deployment — DOES pin a Spring AI version
+    // (via the spring-ai-bom imported above). In 1.0 GA the monolithic
+    // spring-ai-core was split; spring-ai-client-chat is the GA replacement
+    // and transitively brings spring-ai-model (ChatModel, Prompt, the
+    // tool-calling API) and spring-ai-commons.
+    implementation 'org.springframework.ai:spring-ai-client-chat'
+    compileOnly 'org.projectlombok:lombok'
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+application {
+    mainClass.set('tools.deemwar.mochallama.MochallamaApplication')
+    applicationDefaultJvmArgs = [
+            '--add-modules=jdk.incubator.vector',
+            '--enable-native-access=ALL-UNNAMED'
+    ]
+}
+
+test {
+    jvmArgs '--add-modules=jdk.incubator.vector',
+            '--enable-native-access=ALL-UNNAMED',
+            '-Xmx4g'
+}

@@ -1,0 +1,121 @@
+# Taskfile for the mochallama multi-project (go-task v3).
+#
+# Requires JDK 22 (Project Panama FFM + jdk.incubator.vector). Set JAVA_HOME to
+# a JDK 22 below, or export it in your shell before running. The Gradle build
+# also pins a Java 22 toolchain, so Gradle will locate a 22 JDK if installed.
+#
+#   task --list      # see every task
+#   task build       # build everything
+#   task release      # build + test + publish-local + jlink image, then prints next steps
+version: '3'
+
+env:
+  # JDK 22 home. Override per-machine if your install path differs.
+  JAVA_HOME: /Users/muthuishere/Library/Java/JavaVirtualMachines/temurin-22.0.1/Contents/Home
+
+vars:
+  IMAGE_DIR: cli/build/image
+  NPM_DIR: cli/npm
+
+tasks:
+  default:
+    desc: List all available tasks.
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Build all subprojects (core lib, app, cli).
+    cmds:
+      - ./gradlew build
+
+  native:
+    desc: Build the vendored llama.cpp + C bridge and stage the dylibs into core resources.
+    cmds:
+      - ./gradlew :core:buildNative
+
+  test:
+    desc: Run the full test suite across all subprojects.
+    cmds:
+      - ./gradlew test
+
+  publish:local:
+    desc: Publish mochallama core + starter + spring-ai to the local Maven repo (~/.m2). Core bundles the native dylibs.
+    cmds:
+      - ./gradlew :core:publishToMavenLocal :starter:publishToMavenLocal :spring-ai:publishToMavenLocal
+      - 'echo ""'
+      - 'echo "Published to ~/.m2/repository/tools/deemwar/:"'
+      - 'echo "  mochallama-core (bundles the darwin-x86_64 llama.cpp dylibs — no separate native install needed)"'
+      - 'echo "  mochallama-spring-boot-starter (Spring-AI-free)"'
+      - 'echo "  mochallama-spring-ai (Spring AI supplied by the consumer)"'
+
+  publish:central:
+    desc: '[STUB] Publish to Maven Central — needs Sonatype creds + signing.'
+    cmds:
+      - 'echo "TODO: needs sonatype creds + signing"'
+      - exit 1
+
+  cli:image:
+    desc: Build the self-contained jlink runtime image for the CLI (cli/build/image/bin/mochallama).
+    cmds:
+      - ./gradlew :cli:jlink
+
+  cli:run:
+    desc: 'Run the CLI through Gradle, forwarding args. e.g. task cli:run -- models'
+    cmds:
+      - ./gradlew :cli:run --args="{{.CLI_ARGS}}"
+
+  cli:npm:pack:
+    desc: Build the jlink image, stage it into the npm package, and `npm pack` a .tgz tarball.
+    deps:
+      - cli:image
+    cmds:
+      - rm -rf {{.NPM_DIR}}/image
+      - cp -R {{.IMAGE_DIR}} {{.NPM_DIR}}/image
+      - cd {{.NPM_DIR}} && npm pack
+      - 'echo ""'
+      - 'echo "Tarball written to {{.NPM_DIR}}/ — inspect with: tar tzf {{.NPM_DIR}}/*.tgz | head"'
+
+  cli:npm:publish:
+    desc: 'PUBLISHES PUBLICLY to npm (@deemwar/mochallama). Builds + packs first.'
+    deps:
+      - cli:npm:pack
+    cmds:
+      - 'echo "WARNING: this publishes @deemwar/mochallama PUBLICLY to the npm registry."'
+      - 'echo "Ctrl-C within 5s to abort."'
+      - sleep 5
+      - cd {{.NPM_DIR}} && npm publish --access public
+
+  docs:dev:
+    desc: Run the VitePress docs site in dev mode (hot reload).
+    cmds:
+      - cd docs && npm install && npm run dev
+
+  docs:build:
+    desc: Build the static VitePress docs site.
+    cmds:
+      - cd docs && npm install && npm run build
+
+  app:run:
+    desc: Run the Spring Boot demo app (tools.deemwar.mochallama.MochallamaApplication).
+    cmds:
+      - ./gradlew :app:bootRun
+
+  release:
+    desc: 'Build + test + publish-local + jlink image. Does NOT auto-publish to Central/npm — prints manual next steps.'
+    deps:
+      - build
+      - test
+      - publish:local
+      - cli:image
+    cmds:
+      - 'echo ""'
+      - 'echo "================ release artifacts built ================"'
+      - 'echo "  lib    : ~/.m2 mochallama-core (also run `task publish:central` once secrets exist)"'
+      - 'echo "  cli     : {{.IMAGE_DIR}}/bin/mochallama (jlink runtime image)"'
+      - 'echo ""'
+      - 'echo "Next manual steps (intentionally NOT automated):"'
+      - 'echo "  1. task cli:npm:pack       # produce the npm tarball, inspect it"'
+      - 'echo "  2. task cli:npm:publish    # publish to npm (public)"'
+      - 'echo "  3. task publish:central    # publish lib to Maven Central (needs creds)"'
+      - 'echo "========================================================="'
