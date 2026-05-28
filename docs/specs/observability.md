@@ -104,6 +104,60 @@ curl -s localhost:8080/actuator/metrics/mochallama.tokens.prompt
 curl -s localhost:8080/actuator/metrics/mochallama.tokens_per_second
 ```
 
+### Sample output
+
+`GET /actuator/health` once the model is `READY` (note the `mochallama`
+component carries `model` / `state` / `loadDurationMs` details):
+
+```json
+{
+  "status": "UP",
+  "components": {
+    "mochallama": {
+      "status": "UP",
+      "details": {
+        "model": "qwen2.5-1.5b-instruct-q4_k_m",
+        "state": "READY",
+        "loadDurationMs": 1843
+      }
+    }
+  }
+}
+```
+
+While the model is still loading the same component is `DOWN` (so the aggregate
+status is `DOWN`), with `state` = `DOWNLOADING` or `LOADING`; on a load failure
+it is `DOWN` with an extra `error` detail.
+
+`GET /actuator/metrics/mochallama.inference.duration` — the inference timer, with
+its `count`, `total`, and `max` statistics and the available `model` tag:
+
+```json
+{
+  "name": "mochallama.inference.duration",
+  "baseUnit": "seconds",
+  "measurements": [
+    { "statistic": "COUNT", "value": 7.0 },
+    { "statistic": "TOTAL_TIME", "value": 18.42 },
+    { "statistic": "MAX", "value": 3.91 }
+  ],
+  "availableTags": [
+    { "tag": "model", "values": ["qwen2.5-1.5b-instruct-q4_k_m"] }
+  ]
+}
+```
+
+`GET /actuator/metrics/mochallama.tokens_per_second` — the last-turn throughput
+gauge (untagged):
+
+```json
+{
+  "name": "mochallama.tokens_per_second",
+  "measurements": [ { "statistic": "VALUE", "value": 12.4 } ],
+  "availableTags": []
+}
+```
+
 ## Enabling Prometheus
 
 Prometheus support is opt-in. The starter declares
