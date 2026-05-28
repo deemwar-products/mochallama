@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import tools.deemwar.mochallama.ChatResult;
 import tools.deemwar.mochallama.GenerationOptions;
+import tools.deemwar.mochallama.LlamaException;
 import tools.deemwar.mochallama.Message;
+import tools.deemwar.mochallama.ModelInfo;
 import tools.deemwar.mochallama.ToolCall;
 import tools.deemwar.mochallama.ToolDefinition;
 import tools.deemwar.mochallama.Usage;
@@ -44,39 +46,121 @@ public final class ChatEngine implements AutoCloseable {
     }
 
     /**
+     * Inspect a GGUF's tool-calling capability WITHOUT creating an engine.
+     *
+     * <p>Loads only the model metadata + chat templates in the bridge (no
+     * inference context) and returns the parsed {@link ModelInfo}. Use this to
+     * pre-flight a model before {@link #load(Path)} — but note that
+     * {@code load} enforces the same gate, so this is an optimisation/UX hook,
+     * not a security boundary.
+     *
+     * @return parsed {@link ModelInfo}; {@link ModelInfo#error()} is non-null
+     *         when the bridge could not inspect the file.
+     */
+    public static ModelInfo inspect(Path gguf) {
+        LlamaBridge.ensureLoaded();
+        if (gguf == null) {
+            throw new IllegalArgumentException("gguf path must not be null");
+        }
+
+        String json;
+        try (Arena callArena = Arena.ofConfined()) {
+            MemorySegment cPath = callArena.allocateFrom(
+                    gguf.toAbsolutePath().toString(), StandardCharsets.UTF_8);
+
+            MemorySegment cInfo = (MemorySegment) LlamaBridge.MODEL_INFO.invokeExact(cPath);
+            if (cInfo == null || cInfo.equals(MemorySegment.NULL)) {
+                // Contract says never-NULL; treat as a hard failure if it happens.
+                throw new LlamaException("MODEL_INFO_FAILED",
+                        "llb_model_info returned NULL for " + gguf);
+            }
+            json = LlamaBridge.readCString(cInfo);
+            // Bridge contract: caller frees the returned string.
+            LlamaBridge.STRING_FREE.invokeExact(cInfo);
+        } catch (LlamaException le) {
+            throw le;
+        } catch (Throwable t) {
+            throw new RuntimeException("llb_model_info failed for " + gguf, t);
+        }
+
+        try {
+            BridgeModelInfo bmi = MAPPER.readValue(json, BridgeModelInfo.class);
+            return new ModelInfo(
+                    bmi.supportsTools,
+                    bmi.supportsToolCalls,
+                    bmi.hasToolUseTemplate,
+                    bmi.chatFormat,
+                    bmi.error);
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "failed to parse model_info JSON for " + gguf + ": " + json, e);
+        }
+    }
+
+    /**
      * Load a GGUF model from disk and return a ready-to-use engine.
      *
-     * @throws IllegalStateException if the bridge returns NULL (bad path, OOM…)
+     * <p>mochallama only loads tool-capable models: if the bridge rejects the
+     * model because its chat template does not support tool calling (signalled
+     * via the {@code create_failure:tools_unsupported} event), this throws
+     * {@link LlamaException} with code {@code MODEL_NOT_TOOL_CAPABLE}.
+     *
+     * @throws LlamaException        with code {@code MODEL_NOT_TOOL_CAPABLE} when
+     *                               the model does not support tool calling
+     * @throws IllegalStateException if the bridge returns NULL for any other
+     *                               reason (bad path, OOM, init failure…)
      */
     public static ChatEngine load(Path gguf) {
         LlamaBridge.ensureLoaded();
 
+        // Capture the last create_failure:* event so we can distinguish the
+        // tool-unsupported rejection from other load failures. The native bridge
+        // emits "create_failure:tools_unsupported" before returning NULL when the
+        // chat template is not tool-capable.
+        String[] lastFailure = new String[] { null };
+
         Arena engineArena = Arena.ofConfined();
+        MemorySegment handle = MemorySegment.NULL;
+        Throwable callError = null;
         try {
             MemorySegment cPath = engineArena.allocateFrom(
                     gguf.toAbsolutePath().toString(), StandardCharsets.UTF_8);
 
-            // No event callback for now — keep the boundary tight.
-            MemorySegment cb       = MemorySegment.NULL;
-            MemorySegment userData = MemorySegment.NULL;
+            // Keep the event upcall stub in the engine arena (closed only on the
+            // failure paths below). Allocating it in a nested arena that is
+            // closed immediately after the downcall has proven to destabilise
+            // the FFM upcall return path on this JVM, so we keep one arena.
+            MemorySegment cb = LlamaBridge.eventCallbackStub(engineArena, evt -> {
+                if (evt != null && evt.startsWith("create_failure:")) {
+                    lastFailure[0] = evt;
+                }
+            });
 
-            MemorySegment handle = (MemorySegment) LlamaBridge.CHAT_CREATE
-                    .invokeExact(cPath, cb, userData);
-
-            if (handle == null || handle.equals(MemorySegment.NULL)) {
-                engineArena.close();
-                throw new IllegalStateException(
-                        "llb_chat_create returned NULL for " + gguf);
-            }
-
-            return new ChatEngine(engineArena, handle);
-        } catch (RuntimeException re) {
-            engineArena.close();
-            throw re;
+            handle = (MemorySegment) LlamaBridge.CHAT_CREATE
+                    .invokeExact(cPath, cb, MemorySegment.NULL);
         } catch (Throwable t) {
-            engineArena.close();
-            throw new RuntimeException("llb_chat_create failed", t);
+            callError = t;
         }
+
+        // All throwing happens here, OUTSIDE the frame that performed the
+        // downcall+upcall, to avoid an FFM exception-return crash on this JVM.
+        if (callError != null) {
+            engineArena.close();
+            throw new RuntimeException("llb_chat_create failed", callError);
+        }
+        if (handle == null || handle.equals(MemorySegment.NULL)) {
+            engineArena.close();
+            String failure = lastFailure[0];
+            if ("create_failure:tools_unsupported".equals(failure)) {
+                throw new LlamaException("MODEL_NOT_TOOL_CAPABLE",
+                        "model does not support tool calling: " + gguf);
+            }
+            throw new IllegalStateException(
+                    "llb_chat_create returned NULL for " + gguf
+                            + (failure != null ? " (" + failure + ")" : ""));
+        }
+
+        return new ChatEngine(engineArena, handle);
     }
 
     // ---------------------------------------------------------------
@@ -309,6 +393,16 @@ public final class ChatEngine implements AutoCloseable {
     static final class BridgeError {
         public String code;
         public String message;
+    }
+
+    /** Wire shape of {@code llb_model_info}'s JSON. */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    static final class BridgeModelInfo {
+        @JsonProperty("supports_tools")        public boolean supportsTools;
+        @JsonProperty("supports_tool_calls")   public boolean supportsToolCalls;
+        @JsonProperty("has_tool_use_template") public boolean hasToolUseTemplate;
+        @JsonProperty("chat_format")           public String  chatFormat;
+        public String                          error;
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)

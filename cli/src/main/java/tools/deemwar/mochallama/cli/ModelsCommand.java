@@ -18,6 +18,11 @@ final class ModelsCommand implements Callable<Integer> {
                     ModelRegistry.isCached(p) ? "yes" : "no");
         }
         System.out.printf("%nCache dir: %s%n", ModelRegistry.CACHE_DIR);
+        System.out.println();
+        System.out.println("These built-ins are the tool-only lineup shared with the Spring app.");
+        System.out.println("Any tool-capable Hugging Face id also works, e.g.:");
+        System.out.println("  mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF");
+        System.out.println("Non-tool-capable models are refused at load.");
         return 0;
     }
 }

@@ -24,13 +24,46 @@ dependencies {
 
 // ---------------------------------------------------------------------
 // Native build — vendored llama.cpp + our C bridge via CMake.
-// Output: src/main/resources/native/darwin-x86_64/*.dylib so the
-// dylibs are packaged into the core JAR and resolvable by NativeLoader.
+// Output: src/main/resources/native/<platform-key>/<libs> so the native
+// libraries are packaged into the core JAR and resolvable by NativeLoader.
+//
+// The platform key + library extension/prefix are derived from the BUILD
+// HOST (each CI runner builds and stages only its own platform):
+//   macOS   x86_64  -> darwin-x86_64 / lib*.dylib
+//   macOS   aarch64 -> darwin-aarch64 / lib*.dylib
+//   Linux   x86_64  -> linux-x86_64  / lib*.so
+//   Windows x86_64  -> windows-x86_64 / *.dll  (no lib prefix)
+// Locally on this Intel Mac that resolves to darwin-x86_64/*.dylib — i.e.
+// byte-for-byte identical to the previous hard-coded behaviour.
 // ---------------------------------------------------------------------
+
+def nativePlatformKey = {
+    def os   = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+    def arch = System.getProperty('os.arch', '').toLowerCase(Locale.ROOT)
+    def osKey
+    if (os.contains('mac') || os.contains('darwin'))      osKey = 'darwin'
+    else if (os.contains('win'))                          osKey = 'windows'
+    else if (os.contains('linux'))                        osKey = 'linux'
+    else throw new GradleException("Unsupported build OS: $os")
+    def archKey
+    if (arch == 'amd64' || arch == 'x86_64')              archKey = 'x86_64'
+    else if (arch == 'aarch64' || arch == 'arm64')        archKey = 'aarch64'
+    else throw new GradleException("Unsupported build arch: $arch")
+    return "$osKey-$archKey"
+}()
+
+// Per-OS shared-library extension + filename prefix.
+def nativeLibExt = {
+    def os = System.getProperty('os.name', '').toLowerCase(Locale.ROOT)
+    if (os.contains('mac') || os.contains('darwin')) return '.dylib'
+    if (os.contains('win'))                          return '.dll'
+    return '.so'
+}()
+def nativeLibPrefix = System.getProperty('os.name', '').toLowerCase(Locale.ROOT).contains('win') ? '' : 'lib'
 
 def cppSourceDir  = file("$projectDir/src/main/cpp")
 def cmakeBuildDir = file("$buildDir/native-cmake")
-def nativeResDir  = file("$projectDir/src/main/resources/native/darwin-x86_64")
+def nativeResDir  = file("$projectDir/src/main/resources/native/$nativePlatformKey")
 
 tasks.register('buildNative') {
     group       = 'build'
@@ -43,9 +76,9 @@ tasks.register('buildNative') {
     // string when the vendored llama.cpp tag changes.
     inputs.property 'llamaCppTag', 'b9371'
     outputs.dir nativeResDir
-    // If the bridge dylib is already staged and intact, skip the CMake round-trip.
+    // If the bridge library is already staged and intact, skip the CMake round-trip.
     outputs.upToDateWhen {
-        def bridge = new File(nativeResDir, 'libllamabridge.dylib')
+        def bridge = new File(nativeResDir, "${nativeLibPrefix}llamabridge${nativeLibExt}")
         bridge.exists() && bridge.length() > 0
     }
 
@@ -71,11 +104,12 @@ tasks.register('buildNative') {
         }
 
         // Stage artefacts. The vendored llama.cpp emits SONAME-versioned
-        // dylibs (e.g. libllama.0.dylib) under build/bin and symlinks the
-        // unversioned name to them. Our bridge links against the versioned
-        // names, so we copy each library under EVERY name its symlink chain
-        // exposes — that way @loader_path resolution works from the staging
-        // directory.
+        // libraries (e.g. libllama.0.dylib on macOS, libllama.so.0 on Linux,
+        // llama.dll on Windows). Our bridge links against the versioned names,
+        // so we copy each library under EVERY name its symlink chain exposes —
+        // that way @loader_path / $ORIGIN resolution works from the staging
+        // directory. The CMake output dir layout varies per generator, so we
+        // search the whole build tree rather than fixed sub-paths.
         def stems = [
                 'llamabridge', 'llama', 'llama-common',
                 'ggml', 'ggml-base', 'ggml-cpu', 'ggml-blas'
@@ -83,25 +117,39 @@ tasks.register('buildNative') {
 
         // Wipe stale staged artefacts so renamed/removed libs don't linger.
         nativeResDir.eachFile { f ->
-            if (f.name.endsWith('.dylib')) f.delete()
+            if (f.name.endsWith(nativeLibExt) || f.name.contains("${nativeLibExt}.")) f.delete()
+        }
+
+        // Collect every shared-library file produced under the build tree.
+        def isLibName = { String n ->
+            // macOS:   libfoo.dylib / libfoo.0.dylib   (ext is the suffix)
+            // Linux:   libfoo.so   / libfoo.so.0       (ext appears mid-name)
+            // Windows: foo.dll
+            n.endsWith(nativeLibExt) || n.contains("${nativeLibExt}.")
+        }
+        def producedLibs = []
+        cmakeBuildDir.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+            if (isLibName(f.name)) producedLibs << f
         }
 
         stems.each { stem ->
-            // libllamabridge.dylib sits at the build root; the rest live in bin/.
-            def baseDir = (stem == 'llamabridge') ? cmakeBuildDir
-                                                  : new File(cmakeBuildDir, 'bin')
-            def matches = baseDir.listFiles({ d, n ->
-                n.startsWith("lib${stem}.") && n.endsWith('.dylib')
-            } as FilenameFilter)
-            if (!matches || matches.length == 0) {
-                logger.lifecycle("Skipping ${stem} — no dylibs produced")
+            def base = "${nativeLibPrefix}${stem}"
+            // Match "<prefix><stem>.<ext>..." e.g. libllama.dylib, libllama.0.dylib,
+            // libllama.so, libllama.so.0, llama.dll — but NOT libllama-common for
+            // the "llama" stem.
+            def matches = producedLibs.findAll { f ->
+                def n = f.name
+                n == "${base}${nativeLibExt}" ||
+                n.startsWith("${base}.") ||
+                n.startsWith("${base}${nativeLibExt}.")
+            }
+            if (matches.isEmpty()) {
+                logger.lifecycle("Skipping ${stem} — no ${nativeLibExt} produced")
                 return
             }
-            def real = matches.find { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
-            if (!real) {
-                logger.lifecycle("Skipping ${stem} — no regular dylib file found")
-                return
-            }
+            // The real (non-symlink) file carries the bytes; copy its bytes
+            // under every name in the chain so the dependency loader resolves.
+            def real = matches.find { !java.nio.file.Files.isSymbolicLink(it.toPath()) } ?: matches[0]
             matches.each { src ->
                 def dst = new File(nativeResDir, src.name)
                 dst.bytes = real.bytes
@@ -140,8 +188,8 @@ publishing {
                 url = 'https://github.com/deemwar-products/mochallama'
                 licenses {
                     license {
-                        name = 'The Apache License, Version 2.0'
-                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
                     }
                 }
                 developers {

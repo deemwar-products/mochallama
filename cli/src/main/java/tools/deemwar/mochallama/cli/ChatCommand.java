@@ -1,5 +1,7 @@
 package tools.deemwar.mochallama.cli;
 
+import tools.deemwar.mochallama.LlamaException;
+import tools.deemwar.mochallama.ModelInfo;
 import tools.deemwar.mochallama.panama.ChatEngine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -14,8 +16,10 @@ import java.util.concurrent.Callable;
         description = "Load a model and chat interactively (one turn per line; /exit or EOF quits).")
 final class ChatCommand implements Callable<Integer> {
 
-    @Option(names = {"-m", "--model"}, defaultValue = "llama-3.2-1b",
-            description = "Model profile name or a path to a local .gguf (default: ${DEFAULT-VALUE}).")
+    @Option(names = {"-m", "--model"}, defaultValue = "qwen2.5-1.5b",
+            description = "Built-in profile name, a Hugging Face id (org/repo), or a path "
+                    + "to a local .gguf (default: ${DEFAULT-VALUE}). Only tool-capable "
+                    + "models are accepted.")
     String model;
 
     @Option(names = "--max-tokens", defaultValue = "256",
@@ -29,9 +33,32 @@ final class ChatCommand implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         Path gguf = ModelRegistry.resolve(model);
+
+        // Gate on tool capability before loading — mochallama only runs
+        // tool-capable models. inspect() is the cheap pre-flight; load() enforces
+        // the same gate authoritatively (throws MODEL_NOT_TOOL_CAPABLE).
+        ModelInfo info = ChatEngine.inspect(gguf);
+        if (info.ok() && !info.toolCapable()) {
+            System.err.println("Refusing to load '" + model + "': its chat template does not "
+                    + "support tool calling. mochallama only runs tool-capable models.");
+            return 2;
+        }
+
         System.out.println("Loading model: " + gguf);
 
-        try (ChatEngine engine = ChatEngine.load(gguf);
+        ChatEngine engine;
+        try {
+            engine = ChatEngine.load(gguf);
+        } catch (LlamaException e) {
+            if ("MODEL_NOT_TOOL_CAPABLE".equals(e.code())) {
+                System.err.println("Refusing to load '" + model + "': its chat template does not "
+                        + "support tool calling. mochallama only runs tool-capable models.");
+                return 2;
+            }
+            throw e;
+        }
+
+        try (ChatEngine eng = engine;
              BufferedReader in = new BufferedReader(
                      new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
 
@@ -48,7 +75,7 @@ final class ChatCommand implements Callable<Integer> {
                 }
 
                 long startNanos = System.nanoTime();
-                String reply = engine.chat(line, maxTokens, temperature);
+                String reply = eng.chat(line, maxTokens, temperature);
                 double seconds = (System.nanoTime() - startNanos) / 1_000_000_000.0;
 
                 System.out.println("bot> " + reply);

@@ -11,8 +11,6 @@ Sources used to build `00-landscape.md` and `01-positioning.md`. Verified on
 - JLama
   - <https://github.com/tjake/Jlama>
   - <https://central.sonatype.com/artifact/com.github.tjake/jlama-core> (latest `0.8.4`)
-- llama-bindings (deemwar)
-  - `~/muthu/gitworkspace/small-llm-workspace/llama-bindings/README.md`
 - Llama3.java (mukel)
   - <https://github.com/mukel/llama3.java>
 - Utilitron/LlamaFFM

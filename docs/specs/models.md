@@ -1,10 +1,15 @@
 # Model profiles
 
-**Tool-callers only.** The lineup is deliberately limited to GGUFs that ship a
-tool-capable chat template, because the service exposes tool/function calling
-(`/v1/chat/completions` with `tools`). Models without a reliable tool template
-(notably the Gemma GGUFs, and Llama-3.2 1B/3B which are only partial) were
-dropped.
+**Tool-callers only — now machine-enforced.** The lineup is deliberately limited
+to GGUFs that ship a tool-capable chat template, because the service exposes
+tool/function calling (`/v1/chat/completions` with `tools`). This is no longer
+just a curated list: the native bridge and `ChatEngine` **refuse to load** any
+model whose chat template does not support tool calling (it throws
+`LlamaException(MODEL_NOT_TOOL_CAPABLE)`; the bridge returns NULL). Models
+without a reliable tool template (notably the Gemma GGUFs, and Llama-3.2 1B/3B
+which are only partial) were dropped from the curated set and would in any case
+be rejected at load. The detection mechanism and HF fetch/verify flow are
+specified in [tool-calling-support.md](tool-calling-support.md).
 
 `application.properties` ships with **Qwen2.5-1.5B-Instruct (Q4_K_M)** as the
 default. It is chosen because it is the *proven* tool-caller in this lineup —
@@ -30,6 +35,37 @@ The first run downloads the GGUF into `~/.chatbot_models/` (or whatever
 `llamacpp.model.cache-dir` points at) and reuses it after that. The model id
 reported on `GET /v1/models` is derived from the filename, so switching
 profiles also switches the OpenAI-compatible model id.
+
+## Load any model by Hugging Face id
+
+You are not limited to the four built-in profiles. Point the starter at **any
+tool-capable Hugging Face GGUF repo** by id and it resolves the right `.gguf`
+file (preferred quant `Q4_K_M`, falling back through `Q5_K_M → Q4_0 → …`) via
+the Hub API, then downloads it into the shared cache:
+
+```properties
+# Alternative to llamacpp.model.url + .filename
+llamacpp.model.hf-id=Qwen/Qwen2.5-3B-Instruct-GGUF
+llamacpp.model.quant=Q4_K_M
+```
+
+**Resolution precedence:** explicit `llamacpp.model.url` + `.filename`  >
+`llamacpp.model.hf-id` + `.quant`  >  the built-in default in
+`application.properties`.
+
+The CLI accepts the same forms for `--model` — a built-in profile name, a HF id
+(`org/repo`), or a local `.gguf` path:
+
+```bash
+mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF
+```
+
+Both the starter and the CLI share one resolver/downloader
+(`tools.deemwar.mochallama.hf.HuggingFaceModels`) and one `~/.chatbot_models`
+cache. Tool capability is enforced at load (see
+[tool-calling-support.md](tool-calling-support.md)) — a non-tool HF id is
+rejected, not silently downgraded. Gated/private repos fail early unless an
+`HF_TOKEN` is set (and the license accepted on Hugging Face).
 
 ## Lineup
 

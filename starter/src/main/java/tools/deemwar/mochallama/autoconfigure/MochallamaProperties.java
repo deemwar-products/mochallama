@@ -27,6 +27,18 @@ public class MochallamaProperties {
     /** On-disk filename for the cached GGUF; also drives the reported model id. */
     private String filename;
 
+    /**
+     * Hugging Face model id ({@code org/repo}, e.g.
+     * {@code Qwen/Qwen2.5-3B-Instruct-GGUF}) — an ALTERNATIVE to explicit
+     * {@code url}/{@code filename}. When set (and no explicit url/filename), the
+     * service resolves the {@code .gguf} via the Hub API and downloads it.
+     * Resolution precedence: explicit url/filename &gt; hf-id+quant &gt; built-in default.
+     */
+    private String hfId;
+
+    /** Quant tag to prefer when resolving via {@link #hfId} (e.g. {@code Q4_K_M}). */
+    private String quant = "Q4_K_M";
+
     /** Directory the GGUF is downloaded into / loaded from. */
     private String cacheDir = "${user.home}/.chatbot_models";
 
@@ -67,6 +79,10 @@ public class MochallamaProperties {
     public void   setUrl(String v)         { this.url = v; }
     public String getFilename()            { return filename; }
     public void   setFilename(String v)    { this.filename = v; }
+    public String getHfId()                { return hfId; }
+    public void   setHfId(String v)        { this.hfId = v; }
+    public String getQuant()               { return quant; }
+    public void   setQuant(String v)       { this.quant = v; }
     public String getCacheDir()            { return cacheDir; }
     public void   setCacheDir(String v)    { this.cacheDir = v; }
     public int    getContextSize()         { return contextSize; }

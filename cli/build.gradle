@@ -55,7 +55,12 @@ runtime {
     //   jdk.incubator.vector — ChatEngine's SIMD path
     //   java.logging    — JUL used transitively
     //   jdk.unsupported — guards libs touching sun.misc / internal APIs
-    modules = ['java.base', 'java.logging', 'jdk.incubator.vector', 'jdk.unsupported']
+    //   java.net.http   — HuggingFaceModels downloads GGUF weights via
+    //                     java.net.http.HttpClient (the `chat` path / default).
+    //   jdk.zipfs       — NativeLoader opens the core JAR as a FileSystem
+    //                     (jar: URL) to extract the bundled natives at runtime.
+    //                     Missing it = ProviderNotFoundException "jar".
+    modules = ['java.base', 'java.logging', 'java.net.http', 'jdk.zipfs', 'jdk.incubator.vector', 'jdk.unsupported']
 
     // Launcher name comes from application.applicationName ('mochallama').
     // These JVM args land in the generated bin/mochallama script — FFM needs

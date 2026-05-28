@@ -1,30 +1,38 @@
-# Release: tag-driven multi-platform native build + fat JAR publish.
+# Release: tag-driven cross-platform build -> GitHub Release.
 #
-# Triggered on tags matching v*.*.* — builds natives across the same matrix
-# as build.yml, then a single `assemble` job downloads every platform's
-# natives, stages them under src/main/resources/native/, runs `bootJar`,
-# and attaches the result to a GitHub Release.
+# On a v* tag (or manual dispatch) a matrix builds, per platform:
+#   - that platform's native llama.cpp + bridge libs (via :core:buildNative,
+#     which now stages into src/main/resources/native/<host-key>/ — see
+#     core/build.gradle)
+#   - that platform's jlink runtime image (:cli:jlink)
+#   - the per-platform npm package tarball (image copied into
+#     cli/npm/platforms/<platkey>/image, then `npm pack`)
+#   - a zip of the platform's native libs
 #
-# TODO: code signing / notarization / Maven Central publishing are out of
-# scope for now. Add them once the basic release pipeline is green.
+# A final `release` job downloads every artifact, packs the main npm launcher,
+# and attaches everything to the GitHub Release.
+#
+# TODO: code signing / notarization / Maven Central / npm publish are out of
+# scope here — this builds and attaches release assets only.
 
 name: release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  native:
-    name: native (${{ matrix.native_dir }})
+  build:
+    name: build (${{ matrix.native_key }})
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
     strategy:
@@ -32,19 +40,23 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            native_dir: linux-x86_64
+            native_key: linux-x86_64
+            platkey: linux-x64
             experimental: false
-          # TODO: drop to macos-latest + self-hosted Intel runner once
-          # macos-13 is retired by GitHub.
+          # macos-13 is the last Intel macOS runner GitHub provides.
           - os: macos-13
-            native_dir: darwin-x86_64
+            native_key: darwin-x86_64
+            platkey: darwin-x64
             experimental: false
           - os: macos-14
-            native_dir: darwin-aarch64
+            native_key: darwin-aarch64
+            platkey: darwin-arm64
             experimental: false
-          # TODO: see build.yml — Windows CMake needs cleanup.
+          # Windows CMake config still has mac-isms (Accelerate / @loader_path);
+          # allowed to fail so the rest of the matrix still produces assets.
           - os: windows-latest
-            native_dir: windows-x86_64
+            native_key: windows-x86_64
+            platkey: win32-x64
             experimental: true
 
     steps:
@@ -67,46 +79,83 @@ jobs:
       - name: Clone vendored llama.cpp (pinned tag b9371)
         shell: bash
         run: |
-          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp src/main/native/llama.cpp
+          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp \
+            core/src/main/native/llama.cpp
 
-      - name: Build native (Unix)
+      - name: Build native libs (Unix)
         if: runner.os != 'Windows'
-        run: ./gradlew buildNative --no-daemon --stacktrace
+        run: ./gradlew :core:buildNative --no-daemon --stacktrace
 
-      - name: Build native (Windows)
+      - name: Build native libs (Windows)
         if: runner.os == 'Windows'
-        run: .\gradlew.bat buildNative --no-daemon --stacktrace
+        run: .\gradlew.bat :core:buildNative --no-daemon --stacktrace
 
-      - name: Stage native artifacts into platform dir
+      - name: Show staged natives
+        shell: bash
+        run: |
+          dir="core/src/main/resources/native/${{ matrix.native_key }}"
+          echo "Contents of $dir:"
+          ls -la "$dir" || echo "(missing — buildNative did not stage this platform)"
+
+      - name: Build jlink image (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew :cli:jlink --no-daemon --stacktrace
+
+      - name: Build jlink image (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
+
+      - name: Stage jlink image into platform npm package
         shell: bash
         run: |
           set -eu
-          dest="src/main/resources/native/${{ matrix.native_dir }}"
-          mkdir -p "$dest"
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            find build/native-cmake -maxdepth 3 -type f \( -name '*.so' -o -name '*.so.*' \) -print -exec cp -P {} "$dest/" \; || true
-          elif [ "${{ runner.os }}" = "Windows" ]; then
-            find build/native-cmake -maxdepth 3 -type f \( -name '*.dll' -o -name '*.lib' \) -print -exec cp -P {} "$dest/" \; || true
-          else
-            if [ "${{ matrix.native_dir }}" = "darwin-aarch64" ] && [ -d "src/main/resources/native/darwin-x86_64" ]; then
-              mkdir -p "$dest"
-              cp -R src/main/resources/native/darwin-x86_64/. "$dest/"
-            fi
-          fi
-          echo "Contents of $dest:"
-          ls -la "$dest" || true
+          plat="cli/npm/platforms/${{ matrix.platkey }}"
+          rm -rf "$plat/image"
+          mkdir -p "$plat/image"
+          cp -R cli/build/image/. "$plat/image/"
+          echo "Image staged into $plat/image:"
+          ls -la "$plat/image/bin" || true
 
-      - name: Upload native artifacts
+      - name: Pack platform npm package
+        shell: bash
+        run: |
+          set -eu
+          cd "cli/npm/platforms/${{ matrix.platkey }}"
+          npm pack
+          ls -la ./*.tgz
+
+      - name: Zip native libs
+        shell: bash
+        run: |
+          set -eu
+          src="core/src/main/resources/native/${{ matrix.native_key }}"
+          mkdir -p dist-natives
+          if [ -d "$src" ]; then
+            ( cd "$src/.." && zip -r "$GITHUB_WORKSPACE/dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" "${{ matrix.native_key }}" )
+          else
+            echo "No natives dir for ${{ matrix.native_key }} — skipping zip."
+          fi
+          ls -la dist-natives || true
+
+      - name: Upload platform npm tarball
         uses: actions/upload-artifact@v4
         with:
-          name: native-${{ matrix.native_dir }}
-          path: src/main/resources/native/${{ matrix.native_dir }}/
+          name: npm-${{ matrix.platkey }}
+          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
           if-no-files-found: warn
           retention-days: 30
 
-  assemble:
-    name: assemble fat JAR + publish release
-    needs: native
+      - name: Upload natives zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: natives-${{ matrix.native_key }}
+          path: dist-natives/*.zip
+          if-no-files-found: warn
+          retention-days: 30
+
+  release:
+    name: assemble + publish GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -126,41 +175,56 @@ jobs:
       - name: Clone vendored llama.cpp (pinned tag b9371)
         shell: bash
         run: |
-          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp src/main/native/llama.cpp
+          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp \
+            core/src/main/native/llama.cpp
 
-      - name: Download all native artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: native-artifacts
-          pattern: native-*
+          path: artifacts
 
-      - name: Stage natives under src/main/resources/native/
+      - name: Pack main npm launcher
         shell: bash
         run: |
           set -eu
-          mkdir -p src/main/resources/native
-          for d in native-artifacts/native-*; do
-            name="$(basename "$d" | sed 's/^native-//')"
-            mkdir -p "src/main/resources/native/$name"
-            cp -R "$d/." "src/main/resources/native/$name/"
+          cd cli/npm
+          npm pack
+          ls -la ./*.tgz
+
+      - name: Stage all natives into resources (for the fat JAR)
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p core/src/main/resources/native
+          shopt -s nullglob
+          for z in artifacts/natives-*/*.zip; do
+            echo "Unzipping $z"
+            unzip -o "$z" -d core/src/main/resources/native/
           done
           echo "Staged native layout:"
-          find src/main/resources/native -maxdepth 2 -type f | sort
+          find core/src/main/resources/native -maxdepth 2 -type d | sort
 
-      - name: Assemble fat JAR
-        # bootJar depends on processResources -> buildNative; the local
-        # buildNative will re-stage the host's natives, but the
-        # already-downloaded cross-platform natives stay in place because
-        # buildNative only touches darwin-x86_64.
-        run: ./gradlew bootJar --no-daemon --stacktrace
+      - name: Assemble app fat JAR (best-effort)
+        id: fatjar
+        continue-on-error: true
+        run: ./gradlew :app:bootJar --no-daemon --stacktrace
 
-      - name: Upload fat JAR artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mochallama-${{ github.ref_name }}
-          path: build/libs/*.jar
-          if-no-files-found: error
-          retention-days: 90
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p release-assets
+          shopt -s nullglob
+          # Per-platform npm tarballs.
+          for t in artifacts/npm-*/*.tgz; do cp "$t" release-assets/; done
+          # Main npm launcher tarball.
+          for t in cli/npm/*.tgz; do cp "$t" release-assets/; done
+          # Natives zips.
+          for z in artifacts/natives-*/*.zip; do cp "$z" release-assets/; done
+          # Fat JAR, if it built.
+          for j in app/build/libs/*.jar; do cp "$j" release-assets/ 2>/dev/null || true; done
+          echo "Release assets:"
+          ls -la release-assets
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -169,4 +233,4 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            build/libs/*.jar
+            release-assets/*

@@ -1,0 +1,20 @@
+mochallama
+Copyright (c) 2026 Deemwar
+
+This product is licensed under the MIT License (see LICENSE).
+
+----------------------------------------------------------------------
+Third-party / vendored components
+----------------------------------------------------------------------
+
+This project vendors a copy of llama.cpp (and its bundled ggml library)
+under src/main/native/llama.cpp/, compiled and shipped as native dylibs
+inside the published JARs.
+
+  - llama.cpp  — https://github.com/ggml-org/llama.cpp  — MIT License
+  - ggml       — https://github.com/ggml-org/ggml       — MIT License
+
+Both are distributed under the MIT License, the same license as
+mochallama itself. The upstream copyright notices and license text are
+retained in src/main/native/llama.cpp/ (see that directory's LICENSE).
+Nothing in this NOTICE alters or supersedes the upstream license terms.

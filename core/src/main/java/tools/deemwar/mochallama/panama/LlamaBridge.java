@@ -18,6 +18,7 @@ import java.util.function.Consumer;
  * <p>Maps the symbols declared in {@code llamabridge.h}:
  * <pre>
  *   llb_chat_t* llb_chat_create(const char*, llb_event_cb, void*);
+ *   const char* llb_model_info(const char*);
  *   const char* llb_chat_infer (llb_chat_t*, const char*);
  *   const char* llb_chat_infer_stream(llb_chat_t*, const char*, llb_token_cb, void*);
  *   void        llb_string_free(const char*);
@@ -60,6 +61,10 @@ public final class LlamaBridge {
             ValueLayout.ADDRESS,   // llb_event_cb event_cb
             ValueLayout.ADDRESS);  // void* user_data
 
+    private static final FunctionDescriptor MODEL_INFO_DESC = FunctionDescriptor.of(
+            ValueLayout.ADDRESS,   // return: const char* (malloc'd JSON)
+            ValueLayout.ADDRESS);  // const char* gguf_path
+
     private static final FunctionDescriptor CHAT_INFER_DESC = FunctionDescriptor.of(
             ValueLayout.ADDRESS,   // return: const char*
             ValueLayout.ADDRESS,   // llb_chat_t* chat
@@ -86,6 +91,7 @@ public final class LlamaBridge {
     // ---------------------------------------------------------------
 
     public static final MethodHandle CHAT_CREATE;
+    public static final MethodHandle MODEL_INFO;
     public static final MethodHandle CHAT_INFER;
     public static final MethodHandle CHAT_INFER_STREAM;
     public static final MethodHandle STRING_FREE;
@@ -99,6 +105,7 @@ public final class LlamaBridge {
         SYMBOLS = SymbolLookup.loaderLookup().or(LINKER.defaultLookup());
 
         CHAT_CREATE       = downcall("llb_chat_create",       CHAT_CREATE_DESC);
+        MODEL_INFO        = downcall("llb_model_info",        MODEL_INFO_DESC);
         CHAT_INFER        = downcall("llb_chat_infer",        CHAT_INFER_DESC);
         CHAT_INFER_STREAM = downcall("llb_chat_infer_stream", CHAT_INFER_STREAM_DESC);
         STRING_FREE       = downcall("llb_string_free",       STRING_FREE_DESC);
@@ -187,5 +194,50 @@ public final class LlamaBridge {
     public static MemorySegment tokenCallbackStub(Arena arena, Consumer<String> onToken) {
         MethodHandle bound = TOKEN_TRAMPOLINE.bindTo(onToken);
         return LINKER.upcallStub(bound, TOKEN_CB_DESCRIPTOR, arena);
+    }
+
+    // ---------------------------------------------------------------
+    // Event upcall stub (shares the trampoline shape with the token cb)
+    // ---------------------------------------------------------------
+
+    /** MethodHandle to {@link #invokeEventConsumer}, bound once for stub creation. */
+    private static final MethodHandle EVENT_TRAMPOLINE;
+
+    static {
+        try {
+            EVENT_TRAMPOLINE = MethodHandles.lookup().findStatic(
+                    LlamaBridge.class, "invokeEventConsumer",
+                    MethodType.methodType(void.class, Consumer.class, MemorySegment.class, MemorySegment.class));
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    /**
+     * Trampoline matching {@code void event_cb(const char*, void*)}: reads the
+     * NUL-terminated event string and forwards it to the bound {@link Consumer}.
+     * The {@code userData} pointer is ignored — the consumer is captured by the
+     * bound MethodHandle instead.
+     */
+    @SuppressWarnings("unused")
+    private static void invokeEventConsumer(Consumer<String> consumer,
+                                            MemorySegment event,
+                                            MemorySegment userData) {
+        // Exceptions must never cross back into native code: swallow + ignore.
+        try {
+            consumer.accept(readCString(event));
+        } catch (Throwable ignored) {
+            // best-effort event delivery; don't unwind into the C call
+        }
+    }
+
+    /**
+     * Build a C function pointer (upcall stub) for the {@code llb_event_cb}
+     * signature that dispatches to {@code onEvent}. The stub is allocated in
+     * {@code arena}; it is valid until that arena is closed.
+     */
+    public static MemorySegment eventCallbackStub(Arena arena, Consumer<String> onEvent) {
+        MethodHandle bound = EVENT_TRAMPOLINE.bindTo(onEvent);
+        return LINKER.upcallStub(bound, EVENT_CB_DESCRIPTOR, arena);
     }
 }

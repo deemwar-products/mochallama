@@ -2,7 +2,7 @@
 
 **Local LLM for Spring Boot — Java → Project Panama FFM → a thin C++ `common_chat` bridge → vendored llama.cpp. No JNI. Spring-first.**
 
-`tools.deemwar:mochallama-*` · npm `@deemwar/mochallama` · Apache-2.0 · JDK 22 · OpenAI-compatible HTTP · streaming · tool calling · Actuator metrics
+`tools.deemwar:mochallama-*` · npm `@deemwarhq/mochallama` · MIT · JDK 22 · OpenAI-compatible HTTP · streaming · tool calling · Actuator metrics
 
 [Documentation](https://deemwar-products.github.io/mochallama/) · [GitHub](https://github.com/deemwar-products/mochallama)
 
@@ -72,7 +72,7 @@ curl http://localhost:8080/v1/chat/completions \
 | `core`     | `tools.deemwar:mochallama-core`                 | Framework-free Panama FFM bridge + `ChatEngine` + the stable `MochallamaClient` contract. Bundles the native dylibs. No Spring. |
 | `starter`  | `tools.deemwar:mochallama-spring-boot-starter`  | Spring Boot starter: autoconfigures `LlamaCppService`, the OpenAI-compatible REST controller, Actuator metrics + health. No Spring AI dependency. |
 | `spring-ai`| `tools.deemwar:mochallama-spring-ai`            | Spring AI `ChatModel` / `ChatClient` adapter over `MochallamaClient`. Spring AI is `compileOnly` so the consumer pins the version. |
-| `cli`      | npm `@deemwar/mochallama`                        | Terminal CLI (`mochallama models` / `mochallama chat`), shipped as a self-contained jlink image — no JDK required. |
+| `cli`      | npm `@deemwarhq/mochallama`                        | Terminal CLI (`mochallama models` / `mochallama chat`), shipped as a self-contained jlink image — no JDK required. |
 | `app`      | _(not published)_                               | Demo Spring Boot app that wires the starter + Spring AI adapter together, plus a small web UI. The reference for running everything end-to-end. |
 
 ## Endpoints
@@ -141,6 +141,26 @@ Models download on first start into `~/.chatbot_models`. The id on
 the OpenAI model id too. See the
 [model profiles](https://deemwar-products.github.io/mochallama/specs/models) doc.
 
+**Load any tool-capable model by Hugging Face id.** Instead of a profile, point
+the starter at a HF repo and it resolves the GGUF (preferred quant `Q4_K_M`,
+shared `~/.chatbot_models` cache) for you:
+
+```properties
+llamacpp.model.hf-id=Qwen/Qwen2.5-3B-Instruct-GGUF
+# optional: llamacpp.model.quant=Q4_K_M
+```
+
+The CLI accepts the same — a profile name, a HF id, or a local `.gguf` path:
+
+```bash
+mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF
+```
+
+Only tool-capable models load. A non-tool model is rejected at load time
+(Spring: `/actuator/health` goes DOWN/FAILED with *"does not support tool
+calling"*; CLI: a clear refusal). See
+[tool-calling support](https://deemwar-products.github.io/mochallama/specs/tool-calling-support).
+
 ## Use as a library
 
 Add the starter to a Spring Boot app. It autoconfigures the local model service,
@@ -184,7 +204,7 @@ For the framework-free path, depend on `mochallama-core` and use
 ## CLI
 
 ```bash
-npm i -g @deemwar/mochallama   # macOS x64 only for v0.1.0
+npm i -g @deemwarhq/mochallama   # macOS x64 only for v0.1.0
 mochallama models
 mochallama chat --model qwen2.5-3b
 ```
@@ -196,4 +216,4 @@ examples section) live at **https://deemwar-products.github.io/mochallama/**.
 
 ## License
 
-[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0).
+[MIT](LICENSE). Vendored llama.cpp + ggml are also MIT — see [NOTICE](NOTICE).

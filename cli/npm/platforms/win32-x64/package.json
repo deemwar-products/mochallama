@@ -1,0 +1,21 @@
+{
+  "name": "@deemwarhq/mochallama-win32-x64",
+  "version": "0.1.0",
+  "description": "Windows (x86_64) jlink runtime image for @deemwarhq/mochallama. Installed automatically as an optional dependency of the main package.",
+  "files": [
+    "image"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "license": "MIT",
+  "author": "deemwar <io@deemwar.com>",
+  "homepage": "https://github.com/deemwar-products/mochallama",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deemwar-products/mochallama.git"
+  }
+}

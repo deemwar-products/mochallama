@@ -43,14 +43,29 @@ docs/promotion/
 ### Native build ###
 # Vendored llama.cpp upstream — re-clone via Gradle/CMake
 core/src/main/native/llama.cpp/
-# Generated dylibs are produced by `./gradlew :core:buildNative`
+# Generated native libs are produced by `./gradlew :core:buildNative`
 core/src/main/resources/native/*/*.dylib
+core/src/main/resources/native/*/*.so
+core/src/main/resources/native/*/*.so.*
+core/src/main/resources/native/*/*.dll
 core/src/main/resources/native/*/*.metallib
 
 ### Release / distribution build output ###
 # jlink runtime image (Badass Runtime) — produced by `./gradlew :cli:jlink`
 cli/build/
-# npm wrapper: the jlink image is copied in at pack time, plus pack output
+# npm wrapper: the jlink image is copied into each platform package's image/
+# dir at pack/CI time (only the .gitkeep placeholder is tracked), plus pack
+# output and any locally-installed deps.
 cli/npm/image/
 cli/npm/*.tgz
 cli/npm/node_modules/
+cli/npm/platforms/*/*.tgz
+cli/npm/platforms/*/node_modules/
+# Keep the .gitkeep placeholders, ignore everything else CI drops into image/.
+cli/npm/platforms/*/image/*
+!cli/npm/platforms/*/image/.gitkeep
+# The launcher source lives in cli/npm/bin/ — un-ignore it (the generic STS
+# `bin/` rule above otherwise swallows it, which would drop the npm launcher
+# from the package).
+!cli/npm/bin/
+!cli/npm/bin/**

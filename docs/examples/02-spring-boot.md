@@ -46,7 +46,7 @@ prefix (`MochallamaProperties`). Per-request values on the OpenAI endpoint
 override these.
 
 ```properties
-# Model location
+# Model location — explicit url + filename
 llamacpp.model.url=https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
 llamacpp.model.filename=qwen2.5-1.5b-instruct-q4_k_m.gguf
 llamacpp.model.cache-dir=${user.home}/.chatbot_models
@@ -68,8 +68,27 @@ llamacpp.model.seed=-1
 # mochallama.openai-endpoint.enabled=false
 ```
 
-To switch models without editing properties, activate a profile
-(`qwen2.5-1.5b` / `qwen2.5-3b` / `qwen3-4b` / `phi-4-mini`):
+### Load any model by Hugging Face id
+
+Instead of an explicit `url` + `filename`, point the starter at a **tool-capable
+Hugging Face GGUF repo** by id; it resolves the right `.gguf` (preferred quant
+`Q4_K_M`) via the Hub API and downloads it into the shared cache:
+
+```properties
+llamacpp.model.hf-id=Qwen/Qwen2.5-3B-Instruct-GGUF
+# optional, defaults to Q4_K_M
+llamacpp.model.quant=Q4_K_M
+```
+
+**Resolution precedence:** explicit `url`+`filename` > `hf-id`+`quant` > the
+built-in default. Only tool-capable models load — a non-tool model is rejected
+at load time and `/actuator/health` reports the service DOWN/FAILED with
+*"model does not support tool calling — only tool-capable models are supported"*.
+Gated/private repos fail early unless an `HF_TOKEN` is set (and the license
+accepted on Hugging Face). See [tool-calling support](/specs/tool-calling-support).
+
+To switch among the bundled profiles without editing properties, activate a
+profile (`qwen2.5-1.5b` / `qwen2.5-3b` / `qwen3-4b` / `phi-4-mini`):
 
 ```bash
 ./gradlew bootRun --args='--spring.profiles.active=qwen2.5-3b'

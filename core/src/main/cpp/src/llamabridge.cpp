@@ -36,6 +36,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -122,6 +123,107 @@ static common_chat_tool_choice parse_tool_choice(const std::string& s) {
     if (s == "none")     return COMMON_CHAT_TOOL_CHOICE_NONE;
     if (s == "required") return COMMON_CHAT_TOOL_CHOICE_REQUIRED;
     return COMMON_CHAT_TOOL_CHOICE_AUTO;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tool-capability helpers                                             */
+/*                                                                     */
+/* At llama.cpp b9371 the authoritative tool-capability signal is      */
+/* jinja::caps, surfaced via common_chat_templates_get_caps (reads the */
+/* DEFAULT template's caps). A model whose tool support lives in a      */
+/* separate `tokenizer.chat_template.tool_use` variant would otherwise  */
+/* report supports_tools=false on its (tool-less) default template, so  */
+/* when the GGUF ships a tool_use variant we re-build a templates object */
+/* whose default IS that variant and read caps from it. See            */
+/* docs/specs/tool-calling-support.md §A.2 / §C.2.                      */
+/* ------------------------------------------------------------------ */
+
+struct tool_caps {
+    bool supports_tools        = false;
+    bool supports_tool_calls   = false;
+    bool has_tool_use_template = false;
+};
+
+// Read supports_tools / supports_tool_calls from an already-built templates
+// object via the public caps map.
+static void read_caps_into(const common_chat_templates* tmpls, tool_caps& out) {
+    if (!tmpls) return;
+    std::map<std::string, bool> caps = common_chat_templates_get_caps(tmpls);
+    auto it_tools = caps.find("supports_tools");
+    auto it_calls = caps.find("supports_tool_calls");
+    if (it_tools != caps.end()) out.supports_tools      = it_tools->second;
+    if (it_calls != caps.end()) out.supports_tool_calls = it_calls->second;
+}
+
+// Build caps for a loaded model, preferring the `tool_use` template variant
+// when the GGUF defines one (else the default template). `default_tmpls` is
+// the already-built default templates object (from common_chat_templates_init
+// with an empty override) and may be reused so we don't rebuild it.
+static tool_caps compute_tool_caps(struct llama_model* model,
+                                   const common_chat_templates* default_tmpls) {
+    tool_caps tc;
+    if (!model) return tc;
+
+    const char* tool_use_src = llama_model_chat_template(model, "tool_use");
+    tc.has_tool_use_template = (tool_use_src != nullptr && tool_use_src[0] != '\0');
+
+    if (tc.has_tool_use_template) {
+        // Build a templates object whose DEFAULT is the tool_use source, so the
+        // public caps query reflects the variant's real capability.
+        try {
+            common_chat_templates_ptr variant =
+                common_chat_templates_init(model, std::string(tool_use_src));
+            if (variant) {
+                read_caps_into(variant.get(), tc);
+                return tc;
+            }
+        } catch (const std::exception&) {
+            // fall through to the default template's caps
+        }
+    }
+
+    read_caps_into(default_tmpls, tc);
+    return tc;
+}
+
+// Map common_chat_format to the enum-style names used by llb_model_info's JSON
+// ("CONTENT_ONLY", "PEG_SIMPLE", ...). Diagnostic only — NOT the capability
+// gate (the format reflects which parser family fired for a given call, not
+// whether the model supports tools). See spec §A.4.
+static const char* chat_format_enum_name(common_chat_format fmt) {
+    switch (fmt) {
+        case COMMON_CHAT_FORMAT_CONTENT_ONLY: return "CONTENT_ONLY";
+        case COMMON_CHAT_FORMAT_PEG_SIMPLE:   return "PEG_SIMPLE";
+        case COMMON_CHAT_FORMAT_PEG_NATIVE:   return "PEG_NATIVE";
+        case COMMON_CHAT_FORMAT_PEG_GEMMA4:   return "PEG_GEMMA4";
+        default:                              return "UNKNOWN";
+    }
+}
+
+// Probe the chat format by applying the template with a single sample tool.
+// Diagnostic only; returns "UNKNOWN" on any failure.
+static std::string probe_chat_format(const common_chat_templates* tmpls) {
+    if (!tmpls) return "UNKNOWN";
+    try {
+        common_chat_templates_inputs inputs;
+        common_chat_msg user;
+        user.role    = "user";
+        user.content = "ping";
+        inputs.messages.push_back(user);
+        common_chat_tool tool;
+        tool.name        = "tool1";
+        tool.description  = "a sample tool";
+        tool.parameters  = "{\"type\":\"object\",\"properties\":{}}";
+        inputs.tools.push_back(tool);
+        inputs.tool_choice          = COMMON_CHAT_TOOL_CHOICE_AUTO;
+        inputs.add_generation_prompt = true;
+        inputs.use_jinja             = true;
+        common_chat_params p = common_chat_templates_apply(
+            const_cast<common_chat_templates*>(tmpls), inputs);
+        return chat_format_enum_name(p.format);
+    } catch (const std::exception&) {
+        return "UNKNOWN";
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -484,8 +586,93 @@ extern "C" llb_chat_t* llb_chat_create(const char* gguf_path,
         return nullptr;
     }
 
+    // Hard gate: mochallama only loads tool-capable models. Compute caps from
+    // the tool_use template variant when present (else the default), and reject
+    // any model whose template cannot describe tools / round-trip tool calls.
+    {
+        tool_caps tc = compute_tool_caps(chat->model, chat->templates.get());
+        if (!(tc.supports_tools && tc.supports_tool_calls)) {
+            emit(chat, "create_failure:tools_unsupported");
+            chat->templates.reset();
+            llama_free(chat->ctx);
+            llama_model_free(chat->model);
+            delete chat;
+            return nullptr;
+        }
+    }
+
     emit(chat, "create_success");
     return chat;
+}
+
+// Build the model-info JSON, optionally carrying an error reason. Never NULL.
+static const char* build_model_info(const tool_caps& tc,
+                                    const std::string& chat_format,
+                                    const char* error) {
+    json j;
+    j["supports_tools"]        = tc.supports_tools;
+    j["supports_tool_calls"]   = tc.supports_tool_calls;
+    j["has_tool_use_template"] = tc.has_tool_use_template;
+    if (error) {
+        j["chat_format"] = nullptr;
+        j["error"]       = error;
+    } else {
+        j["chat_format"] = chat_format;
+        j["error"]       = nullptr;
+    }
+    const char* out = dup_cstr(j.dump());
+    if (out) return out;
+    // Last-ditch fallback if dup_cstr OOMs.
+    static const char fallback[] =
+        "{\"supports_tools\":false,\"supports_tool_calls\":false,"
+        "\"has_tool_use_template\":false,\"chat_format\":null,"
+        "\"error\":\"oom\"}";
+    return dup_cstr(std::string(fallback));
+}
+
+extern "C" const char* llb_model_info(const char* gguf_path) {
+    tool_caps tc;  // defaults: all false
+
+    if (!gguf_path) {
+        return build_model_info(tc, "", "null_path");
+    }
+    {
+        FILE* f = fopen(gguf_path, "rb");
+        if (!f) return build_model_info(tc, "", "model_not_found");
+        fclose(f);
+    }
+
+    llama_backend_init();
+
+    // Load just the model (no inference context) — enough to read GGUF KV and
+    // build chat templates. Cheaper than a full create; freed before returning.
+    llama_model_params mparams = llama_model_default_params();
+    mparams.n_gpu_layers = 0;
+
+    struct llama_model* model = llama_model_load_from_file(gguf_path, mparams);
+    if (!model) {
+        return build_model_info(tc, "", "load_model");
+    }
+
+    common_chat_templates_ptr tmpls;
+    try {
+        tmpls = common_chat_templates_init(model, "");
+    } catch (const std::exception&) {
+        llama_model_free(model);
+        return build_model_info(tc, "", "chat_template");
+    }
+    if (!tmpls) {
+        llama_model_free(model);
+        return build_model_info(tc, "", "chat_template");
+    }
+
+    tc = compute_tool_caps(model, tmpls.get());
+    std::string fmt = probe_chat_format(tmpls.get());
+
+    tmpls.reset();
+    llama_model_free(model);
+
+    return build_model_info(tc, fmt, nullptr);
 }
 
 extern "C" const char* llb_chat_infer(llb_chat_t* chat, const char* request_json) {

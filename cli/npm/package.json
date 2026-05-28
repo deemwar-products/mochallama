@@ -1,13 +1,12 @@
 {
-  "name": "@deemwar/mochallama",
+  "name": "@deemwarhq/mochallama",
   "version": "0.1.0",
-  "description": "Run a local llama.cpp LLM from the terminal — JVM-powered (Project Panama FFM), shipped as a self-contained jlink runtime image. macOS x64 only for v0.1.0.",
+  "description": "Run a local llama.cpp LLM from the terminal — JVM-powered (Project Panama FFM), shipped as self-contained jlink runtime images. Cross-platform via per-platform optional dependencies.",
   "bin": {
     "mochallama": "bin/mochallama.js"
   },
   "files": [
     "bin",
-    "image",
     "README.md"
   ],
   "keywords": [
@@ -21,7 +20,7 @@
     "ffm"
   ],
   "author": "deemwar <io@deemwar.com>",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "homepage": "https://github.com/deemwar-products/mochallama",
   "repository": {
     "type": "git",
@@ -33,11 +32,11 @@
   "engines": {
     "node": ">=16"
   },
-  "//os-cpu-note": "v0.1.0 bundles a macOS x64 jlink image (native llama.cpp dylibs are darwin-x86_64). The os/cpu fields below make npm refuse installs on unsupported platforms instead of silently shipping a broken binary. Additional platforms will publish as separate image bundles later.",
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "x64"
-  ]
+  "//platform-note": "This package carries NO native payload. The jlink runtime image (trimmed JRE + llama.cpp natives) lives in the per-platform optionalDependencies below — npm installs only the one matching the host os/cpu; bin/mochallama.js resolves it at runtime. Keep these versions pinned in lockstep with this package's version.",
+  "optionalDependencies": {
+    "@deemwarhq/mochallama-darwin-x64": "0.1.0",
+    "@deemwarhq/mochallama-darwin-arm64": "0.1.0",
+    "@deemwarhq/mochallama-linux-x64": "0.1.0",
+    "@deemwarhq/mochallama-win32-x64": "0.1.0"
+  }
 }

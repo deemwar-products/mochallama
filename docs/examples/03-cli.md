@@ -1,6 +1,6 @@
 # CLI
 
-`@deemwar/mochallama` is a terminal CLI that runs a local llama.cpp model
+`@deemwarhq/mochallama` is a terminal CLI that runs a local llama.cpp model
 straight from the command line. It is JVM-powered (Project Panama FFM bridge,
 same `mochallama-core` engine as the Spring app) but shipped as a self-contained
 **jlink runtime image** — a trimmed JRE plus the native dylibs — so you do
@@ -14,7 +14,7 @@ same `mochallama-core` engine as the Spring app) but shipped as a self-contained
 ## Install
 
 ```bash
-npm i -g @deemwar/mochallama
+npm i -g @deemwarhq/mochallama
 ```
 
 ## List model profiles
@@ -29,14 +29,22 @@ mochallama models
 ```
 PROFILE         FILENAME                                  SIZE       CACHED
 -------         --------                                  ----       ------
-llama-3.2-1b    Llama-3.2-1B-Instruct-Q4_0.gguf           ~700 MB    no
-llama-3.2-3b    Llama-3.2-3B-Instruct-Q4_0.gguf           ~1.8 GB    no
-qwen3.5-4b      Qwen3-4B-Instruct-2507-Q4_K_M.gguf        ~2.5 GB    no
-gemma-4-e4b     gemma-3n-E4B-it-Q4_K_M.gguf               ~4.5 GB    no
+qwen2.5-1.5b    qwen2.5-1.5b-instruct-q4_k_m.gguf         ~1.1 GB    no
+qwen2.5-3b      qwen2.5-3b-instruct-q4_k_m.gguf           ~2.1 GB    no
+qwen3-4b        Qwen3-4B-Instruct-2507-Q4_K_M.gguf        ~2.5 GB    no
 phi-4-mini      Phi-4-mini-instruct-Q4_K_M.gguf           ~2.5 GB    no
 
 Cache dir: /Users/you/.chatbot_models
+
+These built-ins are the tool-only lineup shared with the Spring app.
+Any tool-capable Hugging Face id also works, e.g.:
+  mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF
+Non-tool-capable models are refused at load.
 ```
+
+The built-in profiles are the **same tool-only set** the Spring app ships
+(`qwen2.5-1.5b` is the default). The older `llama-3.2-*` / `gemma-4-e4b` entries
+were removed — they are not reliable tool-callers and would be refused at load.
 
 ## Chat
 
@@ -59,21 +67,29 @@ you> /exit
 bye.
 ```
 
-You can also pass a path to a local `.gguf` file instead of a profile name, and
-tune the turn:
+You can also pass **any tool-capable Hugging Face id** (`org/repo`) or a path to
+a local `.gguf` file instead of a profile name, and tune the turn:
 
 ```bash
+# Hugging Face id — resolves the Q4_K_M GGUF and caches it
+mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF
+
+# Local file
 mochallama chat --model ~/models/my-model.gguf --max-tokens 512 --temperature 0.4
 ```
 
-Options: `-m`/`--model` (profile name or `.gguf` path), `--max-tokens`,
+Options: `-m`/`--model` (profile name, HF id, or `.gguf` path), `--max-tokens`,
 `--temperature`. Run `mochallama --help` for the full listing.
 
-> **Note on profile names.** The CLI's built-in catalogue uses its own profile
-> ids (shown above by `mochallama models`), which differ from the Spring app's
-> profile ids (`qwen2.5-1.5b` / `qwen2.5-3b` / `qwen3-4b` / `phi-4-mini`). Both
-> share the same `~/.chatbot_models` cache, so a GGUF fetched by either side is
-> reused by the other.
+> **Tool-only, enforced.** mochallama only runs tool-capable models. If you pass
+> a non-tool model (profile, HF id, or file), the CLI refuses it at load with a
+> clear message and exits non-zero — it never silently downgrades. See
+> [tool-calling support](/specs/tool-calling-support).
+
+> **Shared catalogue + cache.** The CLI's built-in profiles are the **same
+> tool-only set** as the Spring app (`qwen2.5-1.5b` / `qwen2.5-3b` / `qwen3-4b` /
+> `phi-4-mini`), and both share one resolver/downloader and the
+> `~/.chatbot_models` cache — a GGUF fetched by either side is reused by the other.
 
 ## How it works
 

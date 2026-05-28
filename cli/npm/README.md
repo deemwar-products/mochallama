@@ -1,37 +1,50 @@
-# @deemwar/mochallama
+# @deemwarhq/mochallama
 
 Run a local [llama.cpp](https://github.com/ggerganov/llama.cpp) LLM from your
 terminal. The engine is JVM-powered — `mochallama-core` bridges llama.cpp via
 [Project Panama](https://openjdk.org/projects/panama/) (the Foreign Function &
 Memory API), no Python and no separate llama.cpp install required.
 
-This npm package is a thin launcher around a **self-contained `jlink` runtime
-image**: a trimmed JRE plus the native llama.cpp dylibs, all bundled inside the
-package. You do **not** need a JDK installed to use it.
+This npm package is a thin **cross-platform launcher**. The actual payload — a
+self-contained `jlink` runtime image (a trimmed JRE plus the native llama.cpp
+libraries) — ships in a per-platform companion package that `npm` installs
+automatically for your OS/CPU. You do **not** need a JDK installed to use it.
 
 ## Platform support
 
-> **v0.1.0 is macOS (x64) only.**
->
-> The bundled runtime image ships the `darwin-x86_64` native llama.cpp dylibs
-> from `mochallama-core`. `npm` will refuse to install on other platforms (via
-> the `os`/`cpu` fields) rather than hand you a broken binary. Linux and
-> Apple-silicon builds will publish later as separate image bundles. This is an
-> honest single-platform release, not a cross-platform promise.
+Installs and runs on:
 
-## Install
+| platform               | companion package                     |
+|------------------------|---------------------------------------|
+| macOS Intel (x64)      | `@deemwarhq/mochallama-darwin-x64`    |
+| macOS Apple Silicon    | `@deemwarhq/mochallama-darwin-arm64`  |
+| Linux (x64)            | `@deemwarhq/mochallama-linux-x64`     |
+| Windows (x64)          | `@deemwarhq/mochallama-win32-x64`     |
+
+`npm` pulls in only the companion matching your host (via each companion's
+`os`/`cpu` fields); the others are skipped. The launcher resolves the right one
+at runtime.
+
+## Install / run
 
 ```sh
-npm i -g @deemwar/mochallama
+# One-shot via npx — drops straight into a chat session.
+npx @deemwarhq/mochallama
+
+# Or install globally.
+npm i -g @deemwarhq/mochallama
 ```
 
 ## Usage
 
 ```sh
+# Bare invocation starts chatting immediately (defaults to `chat`).
+mochallama
+
 # List available model profiles and whether they're cached locally.
 mochallama models
 
-# Chat with a model (downloads it on first use into ~/.chatbot_models).
+# Chat with a specific model (downloads it on first use into ~/.chatbot_models).
 mochallama chat --model llama-3.2-1b
 
 # Help.
@@ -42,24 +55,30 @@ mochallama --help
 
 ```
 mochallama (this npm bin)
-  └─ bin/mochallama.js        # Node shim, forwards argv + exit code
-       └─ image/bin/mochallama  # jlink launcher (trimmed JRE + JVM args)
-            └─ mochallama-core   # Panama FFM bridge → llama.cpp dylibs
+  └─ bin/mochallama.js                        # cross-platform launcher
+       └─ @deemwarhq/mochallama-<platform>    # resolved via os/cpu
+            └─ image/bin/mochallama           # jlink launcher (trimmed JRE + JVM args)
+                 └─ mochallama-core           # Panama FFM bridge → llama.cpp natives
 ```
 
-The launcher runs with `--enable-native-access=ALL-UNNAMED` and
-`--add-modules=jdk.incubator.vector` baked in.
+The jlink launcher runs with `--enable-native-access=ALL-UNNAMED` and
+`--add-modules=jdk.incubator.vector` baked in. A bare invocation with no
+arguments forwards `chat` so you start talking to a model right away.
 
 ## Building / publishing (maintainers)
 
-The `image/` directory is **not** committed — it's produced by Gradle and copied
-in at pack time. From the repo root:
+The companion packages' `image/` directories are **not** committed — they're
+produced by Gradle (`:cli:jlink`) and copied in before publishing. Locally
+(macOS x64), from the repo root:
 
 ```sh
-task cli:npm:pack      # builds the jlink image, copies it into cli/npm/image, npm pack
-task cli:npm:publish   # the above, then `npm publish --access public`
+task cli:npm:pack      # builds the jlink image, stages it into the darwin-x64
+                       # companion + the main package, then `npm pack` both
 ```
+
+All four platforms' images are produced by the GitHub Actions release matrix on
+a `v*` tag — see `.github/workflows/release.yml`.
 
 ## License
 
-Apache-2.0
+MIT

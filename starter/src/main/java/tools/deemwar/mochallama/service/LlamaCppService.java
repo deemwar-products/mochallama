@@ -2,11 +2,15 @@ package tools.deemwar.mochallama.service;
 
 import tools.deemwar.mochallama.ChatResult;
 import tools.deemwar.mochallama.GenerationOptions;
+import tools.deemwar.mochallama.LlamaException;
 import tools.deemwar.mochallama.Message;
+import tools.deemwar.mochallama.ModelInfo;
 import tools.deemwar.mochallama.MochallamaClient;
 import tools.deemwar.mochallama.ToolDefinition;
 import tools.deemwar.mochallama.Usage;
 import tools.deemwar.mochallama.autoconfigure.MochallamaProperties;
+import tools.deemwar.mochallama.hf.HuggingFaceModels;
+import tools.deemwar.mochallama.hf.HuggingFaceModels.HfModel;
 import tools.deemwar.mochallama.panama.ChatEngine;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
@@ -20,15 +24,8 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URL;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -39,8 +36,6 @@ public class LlamaCppService implements MochallamaClient {
 
     public enum LoadState { DOWNLOADING, LOADING, READY, FAILED }
 
-    private static final long PROGRESS_LOG_BYTES = 10L * 1024 * 1024;
-
     private final MochallamaProperties props;
 
     @Getter
@@ -48,6 +43,9 @@ public class LlamaCppService implements MochallamaClient {
 
     @Getter
     private volatile String lastError;
+
+    /** Filename actually used on disk; set once the location is resolved (esp. for hf-id). */
+    private volatile String resolvedFilename;
 
     private volatile ChatEngine engine;
 
@@ -120,8 +118,11 @@ public class LlamaCppService implements MochallamaClient {
     }
 
     public String getModelId() {
-        String f = props.getFilename();
-        if (f == null) return "unknown";
+        String f = resolvedFilename != null ? resolvedFilename : props.getFilename();
+        if (f == null) {
+            // hf-id-only config that hasn't resolved yet: report the HF id.
+            return props.getHfId() != null ? props.getHfId() : "unknown";
+        }
         return f.endsWith(".gguf") ? f.substring(0, f.length() - ".gguf".length()) : f;
     }
 
@@ -231,6 +232,12 @@ public class LlamaCppService implements MochallamaClient {
             loadDurationMs = (System.nanoTime() - loadStartedNanos) / 1_000_000L;
             state = LoadState.READY;
             log.info("model ready ({}) in {} ms", getModelId(), loadDurationMs);
+        } catch (LlamaException e) {
+            state = LoadState.FAILED;
+            lastError = "MODEL_NOT_TOOL_CAPABLE".equals(e.code())
+                    ? "model does not support tool calling — only tool-capable models are supported"
+                    : e.getMessage();
+            log.error("model load rejected ({}): {}", e.code(), lastError);
         } catch (IOException e) {
             state = LoadState.FAILED;
             lastError = e.getMessage();
@@ -238,50 +245,54 @@ public class LlamaCppService implements MochallamaClient {
         }
     }
 
+    /**
+     * Resolve the configured model location and download it if absent, via the
+     * shared {@link HuggingFaceModels}. Resolution precedence:
+     * explicit {@code url}+{@code filename} &gt; {@code hf-id}+{@code quant}.
+     */
     private Path ensureModelDownloaded() throws IOException {
         Path dir = Paths.get(props.getCacheDir());
-        Files.createDirectories(dir);
-        Path target = dir.resolve(props.getFilename());
-        if (Files.exists(target)) {
-            log.info("model present at {} ({} bytes)", target, Files.size(target));
-            return target;
+
+        String url = props.getUrl();
+        String filename = props.getFilename();
+        String hfId = props.getHfId();
+
+        // 1) Explicit url + filename win.
+        if (url != null && !url.isBlank() && filename != null && !filename.isBlank()) {
+            resolvedFilename = filename;
+            return HuggingFaceModels.downloadIfAbsent(url, filename, dir, this::logProgress);
         }
 
-        Path partial = dir.resolve(props.getFilename() + ".partial");
-        URL url = URI.create(props.getUrl()).toURL();
-        HttpURLConnection head = (HttpURLConnection) url.openConnection();
-        head.setRequestMethod("HEAD");
-        long expectedSize = head.getContentLengthLong();
-        head.disconnect();
-        log.info("downloading {} ({} bytes) -> {}", props.getUrl(), expectedSize, partial);
-
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("GET");
-        try (InputStream in = conn.getInputStream();
-             OutputStream out = Files.newOutputStream(partial)) {
-            byte[] buf = new byte[64 * 1024];
-            long total = 0;
-            long nextLog = PROGRESS_LOG_BYTES;
-            int n;
-            while ((n = in.read(buf)) != -1) {
-                out.write(buf, 0, n);
-                total += n;
-                if (total >= nextLog) {
-                    log.info("download progress: {} MB", total / (1024 * 1024));
-                    nextLog += PROGRESS_LOG_BYTES;
-                }
-            }
-            log.info("download complete: {} bytes", total);
-        } finally {
-            conn.disconnect();
+        // 2) hf-id + quant.
+        if (hfId != null && !hfId.isBlank()) {
+            log.info("resolving Hugging Face model id '{}' (quant {})", hfId, props.getQuant());
+            HfModel m = HuggingFaceModels.resolve(hfId, props.getQuant());
+            log.info("resolved {} -> {}", hfId, m.fileName());
+            resolvedFilename = m.fileName();
+            return HuggingFaceModels.downloadIfAbsent(m.resolveUrl(), m.fileName(), dir, this::logProgress);
         }
 
-        Files.move(partial, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        return target;
+        throw new IOException(
+                "no model configured: set llamacpp.model.hf-id or llamacpp.model.url + .filename");
     }
 
+    private void logProgress(String msg) {
+        log.info(msg);
+    }
+
+    /**
+     * Load the GGUF, enforcing the tool-only policy. A fast {@code inspect()}
+     * pre-check gives a clear, cheap failure for non-tool models; the
+     * authoritative gate is {@code ChatEngine.load} which throws
+     * {@code MODEL_NOT_TOOL_CAPABLE} on its own for non-tool templates.
+     */
     private void loadNative(Path modelPath) {
-        this.engine = ChatEngine.load(modelPath);
+        ModelInfo info = ChatEngine.inspect(modelPath);
+        if (info.ok() && !info.toolCapable()) {
+            throw new LlamaException("MODEL_NOT_TOOL_CAPABLE",
+                    "model does not support tool calling: " + modelPath);
+        }
+        this.engine = ChatEngine.load(modelPath); // enforces the same gate authoritatively
         log.info("native engine loaded for {}", modelPath);
     }
 

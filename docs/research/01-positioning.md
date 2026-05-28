@@ -56,8 +56,8 @@ Be honest with prospective users about all of this up front:
 - **No grammar / JSON schema / LoRA / embeddings / re-ranking / infilling.**
   All of these are surfaced by `de.kherud:llama` 4.x; none are surfaced
   here.
-- **No license file in the repo yet.** Must be fixed before a public v0.1.0
-  — see `docs/promotion/02-launch-checklist.md`.
+- **Licensed MIT.** A root `LICENSE` (MIT) and a `NOTICE` acknowledging the
+  vendored MIT-licensed llama.cpp + ggml are in the repo.
 
 ## Who is it for
 

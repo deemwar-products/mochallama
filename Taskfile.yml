@@ -66,24 +66,35 @@ tasks:
       - ./gradlew :cli:run --args="{{.CLI_ARGS}}"
 
   cli:npm:pack:
-    desc: Build the jlink image, stage it into the npm package, and `npm pack` a .tgz tarball.
+    desc: Build the jlink image, stage it into the darwin-x64 platform package, and `npm pack` both the platform + main launcher tarballs (LOCAL = darwin-x64 only).
     deps:
       - cli:image
+    vars:
+      PLAT_DIR: '{{.NPM_DIR}}/platforms/darwin-x64'
     cmds:
-      - rm -rf {{.NPM_DIR}}/image
-      - cp -R {{.IMAGE_DIR}} {{.NPM_DIR}}/image
+      # Populate the local platform package's image dir from the jlink output.
+      - rm -rf {{.PLAT_DIR}}/image
+      - mkdir -p {{.PLAT_DIR}}/image
+      - cp -R {{.IMAGE_DIR}}/. {{.PLAT_DIR}}/image/
+      # Pack the platform package (with its image) and the main launcher.
+      - cd {{.PLAT_DIR}} && npm pack
       - cd {{.NPM_DIR}} && npm pack
       - 'echo ""'
-      - 'echo "Tarball written to {{.NPM_DIR}}/ — inspect with: tar tzf {{.NPM_DIR}}/*.tgz | head"'
+      - 'echo "Tarballs written:"'
+      - 'echo "  platform: {{.PLAT_DIR}}/*.tgz   (bundles the darwin-x64 jlink image)"'
+      - 'echo "  launcher: {{.NPM_DIR}}/*.tgz     (resolves the platform pkg at runtime)"'
+      - 'echo "Inspect with: tar tzf {{.PLAT_DIR}}/*.tgz | head"'
 
   cli:npm:publish:
-    desc: 'PUBLISHES PUBLICLY to npm (@deemwar/mochallama). Builds + packs first.'
+    desc: 'PUBLISHES PUBLICLY to npm the darwin-x64 platform pkg + the main launcher. Other platforms publish from CI (release.yml). Builds + packs first.'
     deps:
       - cli:npm:pack
     cmds:
-      - 'echo "WARNING: this publishes @deemwar/mochallama PUBLICLY to the npm registry."'
-      - 'echo "Ctrl-C within 5s to abort."'
+      - 'echo "WARNING: this publishes @deemwarhq/mochallama-darwin-x64 AND @deemwarhq/mochallama PUBLICLY to the npm registry."'
+      - 'echo "The other platform packages are published by the release workflow. Ctrl-C within 5s to abort."'
       - sleep 5
+      # Platform package first — the main launcher's optionalDependency must exist.
+      - cd {{.NPM_DIR}}/platforms/darwin-x64 && npm publish --access public
       - cd {{.NPM_DIR}} && npm publish --access public
 
   docs:dev:

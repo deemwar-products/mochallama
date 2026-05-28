@@ -1,0 +1,21 @@
+{
+  "name": "@deemwarhq/mochallama-darwin-arm64",
+  "version": "0.1.0",
+  "description": "macOS Apple Silicon (arm64) jlink runtime image for @deemwarhq/mochallama. Installed automatically as an optional dependency of the main package.",
+  "files": [
+    "image"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "license": "MIT",
+  "author": "deemwar <io@deemwar.com>",
+  "homepage": "https://github.com/deemwar-products/mochallama",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deemwar-products/mochallama.git"
+  }
+}

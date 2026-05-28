@@ -60,15 +60,51 @@ typedef void (*llb_token_cb)(const char* token_piece, void* user_data);
 /*
  * Load a GGUF chat model from disk and create an inference engine.
  *
+ * mochallama enforces a tool-calling policy: a model whose chat template
+ * does NOT support tool calling cannot produce a usable engine. After the
+ * chat templates are built, caps are computed from the `tool_use` template
+ * variant when the GGUF ships one (else the default template). If
+ * `supports_tools` is false, the bridge frees everything, emits the event
+ * "create_failure:tools_unsupported" via event_cb, and returns NULL.
+ *
  * @param gguf_path   Path to the .gguf model file.
  * @param event_cb    Optional progress callback (NULL to disable).
  * @param user_data   Opaque pointer passed back to event_cb.
  * @return            Engine handle, or NULL on any failure
- *                    (missing file, bad model, OOM, context init failure).
+ *                    (missing file, bad model, OOM, context init failure,
+ *                    or a chat template that does not support tool calling —
+ *                    distinguished by the "create_failure:tools_unsupported"
+ *                    event).
  */
 llb_chat_t* llb_chat_create(const char* gguf_path,
                             llb_event_cb event_cb,
                             void* user_data);
+
+/*
+ * Inspect a GGUF model's tool-calling capability WITHOUT creating an engine.
+ *
+ * Loads just the model (no inference context), builds its chat templates and
+ * computes caps from the `tool_use` template variant when present (else the
+ * default), then frees the model again. Intended as a pre-flight check so
+ * callers can reject non-tool-capable models before committing to a load.
+ *
+ * Returns a malloc'd, NUL-terminated UTF-8 JSON string — release it via
+ * llb_string_free. NEVER returns NULL; failures are reported in the JSON's
+ * "error" field. Shape:
+ *
+ *   {
+ *     "supports_tools":       bool,     // caps.supports_tools (from tool_use variant if present)
+ *     "supports_tool_calls":  bool,     // caps.supports_tool_calls
+ *     "has_tool_use_template":bool,     // GGUF has tokenizer.chat_template.tool_use
+ *     "chat_format":          "CONTENT_ONLY|PEG_SIMPLE|PEG_NATIVE|PEG_GEMMA4|...",
+ *     "error":                null | "<reason>"
+ *   }
+ *
+ * On error, the boolean fields are false, "chat_format" is null and "error"
+ * carries a human-readable reason (e.g. "model_not_found", "load_model",
+ * "chat_template").
+ */
+const char* llb_model_info(const char* gguf_path);
 
 /*
  * Run a single chat inference (non-streaming).

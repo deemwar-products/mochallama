@@ -17,14 +17,24 @@ import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
- * Extracts the bundled native dylibs from {@code classpath:/native/<os>-<arch>/}
+ * Extracts the bundled native libraries from {@code classpath:/native/<os>-<arch>/}
  * into a fresh temp directory and loads them in dependency order.
  *
+ * <p>Supported platform keys: {@code darwin-x86_64}, {@code darwin-aarch64},
+ * {@code linux-x86_64}, {@code windows-x86_64}. The library extension and name
+ * prefix vary per-OS:
+ * <ul>
+ *   <li>macOS — {@code lib<stem>.dylib}</li>
+ *   <li>Linux — {@code lib<stem>.so}</li>
+ *   <li>Windows — {@code <stem>.dll} (no {@code lib} prefix)</li>
+ * </ul>
+ *
  * <p>The bridge is dlopen'd against versioned SONAMEs (e.g.
- * {@code @rpath/libllama.0.dylib}). The build copies every name in each
- * dylib's symlink chain into resources, so we mirror them all into the temp
- * dir verbatim — that lets {@code @rpath} resolution from inside libllamabridge
- * find the sibling libraries without any DYLD_LIBRARY_PATH hackery.
+ * {@code @rpath/libllama.0.dylib} on macOS, {@code libllama.so.0} on Linux).
+ * The build copies every name in each library's symlink chain into resources,
+ * so we mirror them all into the temp dir verbatim — that lets {@code @rpath} /
+ * {@code $ORIGIN} resolution from inside libllamabridge find the sibling
+ * libraries without any DYLD_LIBRARY_PATH / LD_LIBRARY_PATH hackery.
  *
  * <p>Loading is idempotent: a static guard prevents reloading on repeated calls.
  */
@@ -61,24 +71,37 @@ public final class NativeLoader {
             if (bridgePath != null) return bridgePath;
 
             try {
-                String resourceDir = "/native/" + platformDir() + "/";
+                String platform = platformDir();
+                String resourceDir = "/native/" + platform + "/";
+
+                // Fail fast (and helpfully) if this build wasn't packaged with
+                // natives for the running platform.
+                if (NativeLoader.class.getResource(resourceDir) == null) {
+                    throw new IllegalStateException(
+                            "no mochallama native binaries bundled for " + platform
+                                    + " — this build supports: " + presentPlatforms());
+                }
+
                 Path tmp = Files.createTempDirectory("llamabridge");
                 tmp.toFile().deleteOnExit();
 
-                // Stage EVERY dylib file under the resource dir into the temp
-                // dir, preserving filenames. We need every versioned variant
-                // (libfoo.dylib, libfoo.0.dylib, libfoo.0.13.0.dylib) so that
-                // @rpath lookups inside libllamabridge resolve.
+                // Stage EVERY native library file under the resource dir into
+                // the temp dir, preserving filenames. We need every versioned
+                // variant (libfoo.dylib, libfoo.0.dylib, libfoo.0.13.0.dylib on
+                // macOS; libfoo.so, libfoo.so.0 on Linux) so that @rpath /
+                // $ORIGIN lookups inside libllamabridge resolve.
                 List<String> staged = stageAllDylibs(resourceDir, tmp);
                 if (staged.isEmpty()) {
                     throw new IllegalStateException(
-                            "No dylibs found under classpath:" + resourceDir);
+                            "no mochallama native binaries bundled for " + platform
+                                    + " — this build supports: " + presentPlatforms());
                 }
 
-                String dylibExt = dylibExtension();
+                String libExt = dylibExtension();
+                String libPrefix = libPrefix();
                 Path bridge = null;
                 for (String stem : LOAD_ORDER) {
-                    Path lib = tmp.resolve("lib" + stem + dylibExt);
+                    Path lib = tmp.resolve(libPrefix + stem + libExt);
                     if (!Files.isRegularFile(lib)) {
                         throw new IllegalStateException(
                                 "Missing required native library: " + lib);
@@ -135,6 +158,33 @@ public final class NativeLoader {
         if (os.contains("mac") || os.contains("darwin")) return ".dylib";
         if (os.contains("win")) return ".dll";
         return ".so";
+    }
+
+    /** Library file-name prefix: {@code lib} on Unix, none on Windows. */
+    private static String libPrefix() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win") ? "" : "lib";
+    }
+
+    /** Candidate platform keys we may ship natives for. */
+    private static final List<String> KNOWN_PLATFORMS = List.of(
+            "darwin-x86_64", "darwin-aarch64", "linux-x86_64", "windows-x86_64");
+
+    /**
+     * The subset of {@link #KNOWN_PLATFORMS} actually bundled in this build —
+     * i.e. those whose {@code classpath:/native/<key>/} resource dir is present.
+     * Used only to build a helpful error message when the running platform is
+     * unsupported.
+     */
+    private static String presentPlatforms() {
+        StringBuilder sb = new StringBuilder();
+        for (String key : KNOWN_PLATFORMS) {
+            if (NativeLoader.class.getResource("/native/" + key + "/") != null) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(key);
+            }
+        }
+        return sb.length() == 0 ? "(none)" : sb.toString();
     }
 
     /**

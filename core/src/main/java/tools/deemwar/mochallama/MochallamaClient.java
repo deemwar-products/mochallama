@@ -64,4 +64,16 @@ public interface MochallamaClient {
 
     /** Whether the model is loaded and ready to serve inference. */
     boolean isReady();
+
+    /**
+     * Tool-calling capability metadata for the loaded model, derived from its
+     * chat template(s).
+     *
+     * <p>The default implementation throws {@link UnsupportedOperationException};
+     * implementations backed by the native bridge override it to expose the
+     * model's {@link ModelInfo}.
+     */
+    default ModelInfo info() {
+        throw new UnsupportedOperationException("info() not supported by this client");
+    }
 }

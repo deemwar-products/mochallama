@@ -11,7 +11,7 @@ and wait for the model to reach `state: READY`.
 - [Spring Boot](/examples/02-spring-boot) — add the starter, inject the
   autoconfigured `ChatClient` / `ChatModel`, configure `llamacpp.model.*`.
 - [CLI](/examples/03-cli) — `mochallama models` / `mochallama chat` via the npm
-  package `@deemwar/mochallama`.
+  package `@deemwarhq/mochallama`.
 - [Tools & streaming](/examples/04-tools-and-streaming) — the full tool-calling
   round-trip and SSE consumption walkthrough.
 
