@@ -65,18 +65,42 @@ def cppSourceDir  = file("$projectDir/src/main/cpp")
 def cmakeBuildDir = file("$buildDir/native-cmake")
 def nativeResDir  = file("$projectDir/src/main/resources/native/$nativePlatformKey")
 
+// Pinned llama.cpp release. Single source of truth for both the prebuilt
+// binaries we download AND the headers we compile the bridge against.
+def llamaCppTag = 'b9371'
+
+// Build mode: 'prebuilt' (default) downloads llama.cpp's official release libs
+// and compiles ONLY our 1-file bridge against them — fast, no OOM, no 95-min
+// llama.cpp compile. 'source' (-Pnative=source) is the fallback that builds
+// llama.cpp from the vendored tree (the old behaviour).
+def nativeMode = (project.findProperty('native') ?: 'prebuilt').toString()
+
+// Headers root — a (shallow) llama.cpp source checkout. Used in BOTH modes for
+// include paths; in prebuilt mode it is NEVER compiled, only read for headers.
+def headersDir   = file("$projectDir/src/main/native/llama.cpp")
+def prebuiltRoot = file("$buildDir/llama-prebuilt")
+
+// Map our platform key -> llama.cpp release asset suffix + archive extension.
+def prebuiltAsset = {
+    switch (nativePlatformKey) {
+        case 'darwin-x86_64':  return 'macos-x64'
+        case 'darwin-aarch64': return 'macos-arm64'
+        case 'linux-x86_64':   return 'ubuntu-x64'
+        case 'windows-x86_64': return 'win-cpu-x64'
+        default: throw new GradleException("No prebuilt llama.cpp asset mapping for $nativePlatformKey")
+    }
+}()
+def prebuiltArchiveExt = nativePlatformKey.startsWith('windows') ? 'zip' : 'tar.gz'
+
 tasks.register('buildNative') {
     group       = 'build'
-    description = 'Builds the vendored llama.cpp + bridge via CMake and copies dylibs into resources.'
+    description = "Stage native libs into resources/native/$nativePlatformKey. Default mode=prebuilt (download llama.cpp release libs + compile only the bridge); -Pnative=source builds llama.cpp from the vendored tree."
 
     inputs.dir cppSourceDir
-    // Pin the tag, NOT the vendored tree: the shallow clone carries a volatile
-    // .git dir and llama.cpp's CMake shells out to git for build-info, both of
-    // which churn a whole-tree snapshot and force needless rebuilds. Bump this
-    // string when the vendored llama.cpp tag changes.
-    inputs.property 'llamaCppTag', 'b9371'
+    inputs.property 'llamaCppTag', llamaCppTag
+    inputs.property 'nativeMode', nativeMode
     outputs.dir nativeResDir
-    // If the bridge library is already staged and intact, skip the CMake round-trip.
+    // If the bridge library is already staged and intact, skip the whole round-trip.
     outputs.upToDateWhen {
         def bridge = new File(nativeResDir, "${nativeLibPrefix}llamabridge${nativeLibExt}")
         bridge.exists() && bridge.length() > 0
@@ -86,66 +110,83 @@ tasks.register('buildNative') {
         cmakeBuildDir.mkdirs()
         nativeResDir.mkdirs()
 
-        // Configure
-        exec {
-            workingDir cmakeBuildDir
-            commandLine 'cmake',
-                    '-S', cppSourceDir.absolutePath,
-                    '-B', cmakeBuildDir.absolutePath,
-                    '-DCMAKE_BUILD_TYPE=Release'
+        // Headers are needed in both modes. Shallow-clone if absent (fast — the
+        // clone was never the pain; compiling llama.cpp was).
+        if (!new File(headersDir, 'include/llama.h').exists()) {
+            logger.lifecycle("Headers absent — shallow-cloning llama.cpp ${llamaCppTag} (headers only)")
+            headersDir.parentFile.mkdirs()
+            exec {
+                commandLine 'git', 'clone', '--depth', '1', '-b', llamaCppTag,
+                        'https://github.com/ggml-org/llama.cpp', headersDir.absolutePath
+            }
         }
 
-        // Build. Cap parallelism: an UNBOUNDED `--parallel` spawns one heavy
-        // C++ compile per core, and llama.cpp's template-heavy model sources
-        // spike enough RAM to OOM-kill a CI runner (Linux died ~2m in at 83%
-        // with "runner received a shutdown signal"; the macos-13 Intel leg
-        // swap-thrashed for 24h — same root cause). 2 jobs is the safe default
-        // for GitHub-hosted runners; bump locally with -PnativeJobs=N. The
-        // `llamabridge` target pulls in only llama + llama-common + ggml* as
-        // deps, never the (already-excluded) examples/tools/server.
+        // libSourceDir = where the llama/ggml shared libs are harvested from.
+        def libSourceDir
+        def cmakeArgs = ['cmake',
+                '-S', cppSourceDir.absolutePath,
+                '-B', cmakeBuildDir.absolutePath,
+                '-DCMAKE_BUILD_TYPE=Release',
+                "-DLLB_HEADERS_DIR=${headersDir.absolutePath}".toString()]
+
+        def isLibName = { String n ->
+            // macOS: libfoo.dylib / libfoo.0.dylib ; Linux: libfoo.so / libfoo.so.0 ; Windows: foo.dll
+            n.endsWith(nativeLibExt) || n.contains("${nativeLibExt}.")
+        }
+
+        if (nativeMode == 'prebuilt') {
+            def assetName  = "llama-${llamaCppTag}-bin-${prebuiltAsset}.${prebuiltArchiveExt}"
+            def url        = "https://github.com/ggml-org/llama.cpp/releases/download/${llamaCppTag}/${assetName}"
+            def archive    = new File(prebuiltRoot, assetName)
+            def extractDir = new File(prebuiltRoot, nativePlatformKey)
+            if (!archive.exists()) {
+                prebuiltRoot.mkdirs()
+                logger.lifecycle("Downloading prebuilt llama.cpp: ${url}")
+                exec { commandLine 'curl', '-fL', '--retry', '3', '-o', archive.absolutePath, url }
+            }
+            extractDir.deleteDir(); extractDir.mkdirs()
+            // bsdtar (macOS/Windows) and GNU tar (Linux) all auto-detect .tar.gz and .zip with -xf.
+            exec { commandLine 'tar', '-xf', archive.absolutePath, '-C', extractDir.absolutePath }
+            libSourceDir = extractDir
+            // find_library needs the exact dir holding libllama.* — locate it.
+            def llamaLib = null
+            extractDir.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+                if (llamaLib == null && (f.name == "${nativeLibPrefix}llama${nativeLibExt}" ||
+                        f.name.startsWith("${nativeLibPrefix}llama${nativeLibExt}.") ||
+                        f.name.startsWith("${nativeLibPrefix}llama."))) llamaLib = f
+            }
+            if (llamaLib == null) throw new GradleException("Prebuilt ${assetName} did not contain a llama shared lib")
+            cmakeArgs << "-DLLB_PREBUILT_DIR=${llamaLib.parentFile.absolutePath}".toString()
+        } else {
+            libSourceDir = cmakeBuildDir   // source mode: CMake builds llama.cpp here
+        }
+
+        // Configure + build ONLY the bridge target (in prebuilt mode that's all
+        // there is; in source mode it pulls llama + llama-common as deps).
+        exec { workingDir cmakeBuildDir; commandLine cmakeArgs }
         def nativeJobs = (project.findProperty('nativeJobs') ?: '2').toString()
         exec {
             workingDir cmakeBuildDir
             commandLine 'cmake', '--build', cmakeBuildDir.absolutePath,
-                    '--config', 'Release',
-                    '--target', 'llamabridge',
-                    '--parallel', nativeJobs
+                    '--config', 'Release', '--target', 'llamabridge', '--parallel', nativeJobs
         }
 
-        // Stage artefacts. The vendored llama.cpp emits SONAME-versioned
-        // libraries (e.g. libllama.0.dylib on macOS, libllama.so.0 on Linux,
-        // llama.dll on Windows). Our bridge links against the versioned names,
-        // so we copy each library under EVERY name its symlink chain exposes —
-        // that way @loader_path / $ORIGIN resolution works from the staging
-        // directory. The CMake output dir layout varies per generator, so we
-        // search the whole build tree rather than fixed sub-paths.
-        def stems = [
-                'llamabridge', 'llama', 'llama-common',
-                'ggml', 'ggml-base', 'ggml-cpu', 'ggml-blas'
-        ]
+        // Stage: our bridge (from the CMake build dir) + the llama/ggml runtime
+        // closure (from libSourceDir). NOTE ggml-rpc — the PREBUILT libllama links
+        // @rpath/libggml-rpc, so it must be bundled (the source build didn't emit it).
+        def stems = ['llamabridge', 'llama', 'llama-common',
+                     'ggml', 'ggml-base', 'ggml-cpu', 'ggml-blas', 'ggml-rpc']
 
-        // Wipe stale staged artefacts so renamed/removed libs don't linger.
-        nativeResDir.eachFile { f ->
-            if (f.name.endsWith(nativeLibExt) || f.name.contains("${nativeLibExt}.")) f.delete()
-        }
+        // Wipe stale staged libs so renamed/removed ones don't linger.
+        nativeResDir.eachFile { f -> if (isLibName(f.name)) f.delete() }
 
-        // Collect every shared-library file produced under the build tree.
-        def isLibName = { String n ->
-            // macOS:   libfoo.dylib / libfoo.0.dylib   (ext is the suffix)
-            // Linux:   libfoo.so   / libfoo.so.0       (ext appears mid-name)
-            // Windows: foo.dll
-            n.endsWith(nativeLibExt) || n.contains("${nativeLibExt}.")
-        }
         def producedLibs = []
-        cmakeBuildDir.eachFileRecurse(groovy.io.FileType.FILES) { f ->
-            if (isLibName(f.name)) producedLibs << f
+        [cmakeBuildDir, libSourceDir].unique().each { dir ->
+            dir.eachFileRecurse(groovy.io.FileType.FILES) { f -> if (isLibName(f.name)) producedLibs << f }
         }
 
         stems.each { stem ->
             def base = "${nativeLibPrefix}${stem}"
-            // Match "<prefix><stem>.<ext>..." e.g. libllama.dylib, libllama.0.dylib,
-            // libllama.so, libllama.so.0, llama.dll — but NOT libllama-common for
-            // the "llama" stem.
             def matches = producedLibs.findAll { f ->
                 def n = f.name
                 n == "${base}${nativeLibExt}" ||
@@ -153,13 +194,11 @@ tasks.register('buildNative') {
                 n.startsWith("${base}${nativeLibExt}.")
             }
             if (matches.isEmpty()) {
-                logger.lifecycle("Skipping ${stem} — no ${nativeLibExt} produced")
+                logger.lifecycle("Skipping ${stem} — no ${nativeLibExt} found")
                 return
             }
-            // The real (non-symlink) file carries the bytes; copy its bytes
-            // under every name in the chain so the dependency loader resolves.
             def real = matches.find { !java.nio.file.Files.isSymbolicLink(it.toPath()) } ?: matches[0]
-            matches.each { src ->
+            matches.unique { it.name }.each { src ->
                 def dst = new File(nativeResDir, src.name)
                 dst.bytes = real.bytes
                 logger.lifecycle("Staged ${src.name} (${real.length()} bytes)")
