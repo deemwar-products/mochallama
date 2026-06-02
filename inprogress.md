@@ -30,14 +30,38 @@ Local LLM for the JVM: `Java → Project Panama FFM → custom thin C++ bridge (
 - `release.yml` matrix builds natives + jlink images per platform → GitHub Release.
 - **darwin-aarch64 builds successfully.** darwin-x86_64 builds locally.
 
+## Verified working — local end-to-end (2026-06-02 night, Intel Mac, qwen2.5-1.5b)
+- App boots, loads model in ~17s, `/actuator/health` → UP.
+- `/v1/chat/completions` non-stream → assistant text + real token usage.
+- `stream:true` → `chat.completion.chunk` SSE token stream.
+- Tool call → `tool_calls` + `finish_reason:"tool_calls"` (get_weather example).
+- `/v1/models` lists model; web UI at `/` → HTTP 200; CLI `models` lists tool-only lineup.
+- `task publish:local` → core/starter/spring-ai in `~/.m2` (core jar bundles 19 darwin-x86_64 dylibs).
+- `task cli:npm:pack` → launcher + darwin-x64 platform tarballs.
+See PUBLISHING.md for the publish runbook and docs/specs/05-release-and-publish.md for the spec.
+
 ## Known issues / blockers
-1. **Linux release leg fails in CI** — dies with "runner received a shutdown signal / operation was canceled", no compiler error (compiles cleanly then gets killed; recurs even on a clean runner queue). Root cause not yet pinned (suspect GitHub-hosted runner/macOS-concurrency/infra, or an early cancel). UNDER INVESTIGATION — blocks a complete multi-platform release.
+1. **CI native build OOM/hang — ROOT-CAUSED + FIXED (2026-06-02).** Both the Linux
+   fast-fail ("runner received a shutdown signal" at 83%, ~2m) AND the macos-13
+   Intel 24h hang were ONE cause: `cmake --build --parallel` *unbounded* spawned
+   one heavy C++ compile per core; llama.cpp's template-heavy model sources spiked
+   RAM past the runner limit → OOM (Linux) / swap-thrash (Intel mac). Fix: cap to
+   2 jobs (`-PnativeJobs=N`) + build only the `llamabridge` target — see
+   `core/build.gradle`. Validating on branch `ci/fix-tier1-workflows`.
 2. **Windows leg fails** — bridge `CMakeLists` not wired for MSVC; `continue-on-error` so it doesn't block others. Deferred (v0.1.1).
-3. **`build.yml` over-triggers** — runs the full 4-platform matrix on every push AND every dependabot PR, jamming the scarce macOS runners. Needs trimming to an ubuntu-only light check; reserve the heavy matrix for `release.yml` (tags) only.
+3. **`build.yml` over-triggers — FIXED.** Trimmed to a single ubuntu-only compile
+   check (`compileJava -x buildNative`) on push/PR; the heavy cross-platform matrix
+   now lives only in `release.yml`. (It was also stale — used pre-module paths.)
 4. **GraalVM native-image** — deferred (FFM-in-native-image GA only in GraalVM-25 + macOS-AArch64; host is Intel).
+
+## Platform sourcing (decided 2026-06-02)
+darwin-x86_64 = **built locally** (Intel Mac; the macos-13 CI leg is the one that hung,
+dropped from the matrix); darwin-aarch64 + linux + windows = CI. A complete core jar =
+local mac natives + `task release:download` (pulls CI natives) → `task publish:local`.
 
 ## Remaining work
 - **#24 LOCAL-PUBLISH** (pending): `task release:download` → publish cross-platform npm + Maven Central. Gated on:
   - npm: `npm login` + `@deemwarhq` org with publish rights
   - Maven Central: Central Portal account claiming `io.github.deemwar-products` (GitHub-verified) + GPG key → env `CENTRAL_PORTAL_USERNAME/TOKEN`, `SIGNING_KEY/PASSWORD`; switch group to `io.github.deemwar-products`
-- Fix the Linux CI leg (#1 above); fix/defer Windows (#2); trim `build.yml` (#3).
+  - `task release:download` now implemented (pulls CI natives + stages them).
+- Linux CI leg (#1) + `build.yml` (#3) FIXED this session; Windows (#2) still deferred to v0.1.1.

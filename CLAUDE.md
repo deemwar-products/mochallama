@@ -53,13 +53,15 @@ see "Publish state" below.
   `publish:local`; demo; docs on Pages (https://deemwar-products.github.io/mochallama/).
 
 ### Blockers to a real public release
-1. **Linux release leg hangs/cancels in CI** ("runner received a shutdown signal", no
-   compiler error). Root cause unpinned. THE critical-path blocker.
+1. **CI native OOM/hang — FIXED 2026-06-02.** Linux fast-fail ("runner received a
+   shutdown signal" at 83%) and the macos-13 24h hang were one cause: unbounded
+   `cmake --build --parallel` OOM'd the runner. Fixed in `core/build.gradle`
+   (cap to 2 jobs via `-PnativeJobs`, build only `llamabridge`). Validating on
+   branch `ci/fix-tier1-workflows`.
 2. **Windows leg fails** — bridge `CMakeLists` has mac-isms (Accelerate/`@loader_path`);
    `continue-on-error: true` so non-blocking. Deferred to v0.1.1.
-3. **`build.yml` over-triggers** — full 4-platform matrix on every push + every dependabot
-   PR, `cancel-in-progress: true` → runs get cancelled, jams scarce macOS runners. Trim to
-   ubuntu-only light check; reserve the heavy matrix for `release.yml` (tags). Cheap quick win.
+3. **`build.yml` over-triggers — FIXED.** Trimmed to a single ubuntu compile check
+   (`compileJava -x buildNative`); heavy matrix now only in `release.yml`.
 4. **Maven Central not set up** (human-gated) — Central Portal account claiming
    `io.github.deemwar-products` (GitHub-verified) + GPG key → `CENTRAL_PORTAL_USERNAME/TOKEN`,
    `SIGNING_KEY/PASSWORD`; switch group `tools.deemwar` → `io.github.deemwar-products`.
