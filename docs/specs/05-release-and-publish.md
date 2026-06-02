@@ -49,14 +49,17 @@ natives downloaded and staged together before `:core:publish`.
 
 ## Root-cause fix landed this session
 
-Both the Linux fast-fail (~2m, "runner received a shutdown signal" at 83%) and
-the macos-13 24h hang had **one cause**: `cmake --build --parallel` *unbounded*
-spawned one heavy C++ compile per core; llama.cpp's template-heavy model
-sources spiked RAM past the runner limit → OOM (Linux) / swap-thrash (Intel mac).
-Fix: cap to 2 jobs (`-PnativeJobs=N` to override) and build only the
-`llamabridge` target. See `core/build.gradle` `buildNative`. The CMakeLists
-already excludes examples/tools/server, so the build was already minimal —
-parallelism was the lever.
+The Linux fast-fail (~2m, "runner received a shutdown signal" at 83%) and the
+macos-13 24h hang had **one cause**: unbounded `cmake --build --parallel` OOM'd
+the runner while compiling llama.cpp's template-heavy sources.
+
+**Resolved by not compiling llama.cpp at all** (see `03-decisions.md` §12):
+`buildNative` defaults to **mode=prebuilt** — download llama.cpp's official
+release libs for the host platform and compile only the 1-file bridge (~11s
+local; darwin-aarch64 CI leg ~60s vs the old ~95m). `-Pnative=source` keeps the
+from-source build (with the 2-job parallelism cap, `-PnativeJobs=N`) as a
+fallback. Closure gotcha: prebuilt `libllama` links `@rpath/libggml-rpc`, so
+`ggml-rpc` must be bundled (the source build never emitted it).
 
 ## CI workflows (post-fix)
 

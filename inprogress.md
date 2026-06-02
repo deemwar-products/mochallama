@@ -41,13 +41,14 @@ Local LLM for the JVM: `Java → Project Panama FFM → custom thin C++ bridge (
 See PUBLISHING.md for the publish runbook and docs/specs/05-release-and-publish.md for the spec.
 
 ## Known issues / blockers
-1. **CI native build OOM/hang — ROOT-CAUSED + FIXED (2026-06-02).** Both the Linux
-   fast-fail ("runner received a shutdown signal" at 83%, ~2m) AND the macos-13
-   Intel 24h hang were ONE cause: `cmake --build --parallel` *unbounded* spawned
-   one heavy C++ compile per core; llama.cpp's template-heavy model sources spiked
-   RAM past the runner limit → OOM (Linux) / swap-thrash (Intel mac). Fix: cap to
-   2 jobs (`-PnativeJobs=N`) + build only the `llamabridge` target — see
-   `core/build.gradle`. Validating on branch `ci/fix-tier1-workflows`.
+1. **CI native build OOM/hang — ELIMINATED (2026-06-02).** Root cause: unbounded
+   `cmake --build --parallel` OOM'd runners while compiling llama.cpp (Linux died
+   ~2m at 83%; macos-13 Intel swap-thrashed 24h — one cause). **Resolved by no
+   longer compiling llama.cpp at all**: `buildNative` now downloads prebuilt
+   llama.cpp release libs and compiles only the 1-file bridge (~11s local;
+   darwin-aarch64 CI leg ~60s vs the old 95m). See `docs/specs/03-decisions.md` §12,
+   `core/build.gradle`. `-Pnative=source` fallback still caps parallelism. Verified
+   on Intel + CI darwin-aarch64; full CI on branch `ci/fix-tier1-workflows` (PR #11).
 2. **Windows leg fails** — bridge `CMakeLists` not wired for MSVC; `continue-on-error` so it doesn't block others. Deferred (v0.1.1).
 3. **`build.yml` over-triggers — FIXED.** Trimmed to a single ubuntu-only compile
    check (`compileJava -x buildNative`) on push/PR; the heavy cross-platform matrix

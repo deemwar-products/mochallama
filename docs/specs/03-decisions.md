@@ -208,3 +208,36 @@ in one coordinated commit, separately from the design-journal work.
 imports, gradle config, resources path is fine since it's
 `/native/<platform>/`). Folding it into the design work would make the
 diff unreadable. Tracked as a follow-up.
+
+## 12. Download prebuilt llama.cpp instead of compiling it (2026-06-02)
+
+**Decision:** `buildNative` defaults to **mode=prebuilt**: download llama.cpp's
+official release binaries for the host platform
+(`llama-b9371-bin-{macos-x64,macos-arm64,ubuntu-x64,win-cpu-x64}`), and compile
+**only** our 1-file `llamabridge` against vendored headers. `-Pnative=source`
+keeps the old from-source build as a fallback.
+
+**Rejected:**
+- Continuing to compile vendored llama.cpp from source (decision #3) on every
+  build/CI leg.
+- Dropping the bridge for pure-Java Panama over `llama.h` — `common_chat_*` /
+  `common_sampler_*` are a **C++ ABI** (mangled, STL args) FFM can't bind; the
+  `extern "C"` bridge exists precisely for this (decisions #1–2). Confirmed.
+
+**Why:**
+- The from-source build was the entire pain: ~95 min, and an unbounded
+  `cmake --build --parallel` OOM-killed CI runners (Linux died ~2 min in at 83%;
+  the macos-13 Intel leg swap-thrashed for 24 h — one root cause). Downloading
+  prebuilt libs + compiling only the tiny bridge is **~11 s** and cannot OOM.
+- Upstream ships prebuilt `libllama` + `libggml*` + `libllama-common` for every
+  platform we target, pinned to the same tag we already vendor headers from.
+- Consumer experience is unchanged — the jar still bundles per-platform native
+  libs; this only changes how *we* produce them.
+
+**Gotcha (encoded in `core/build.gradle`):** the prebuilt `libllama` links
+`@rpath/libggml-rpc`, which the from-source build never emitted — so the staged
+closure must include `ggml-rpc` or the library fails to load at runtime.
+
+**Cost:** A shallow llama.cpp checkout is still needed for headers (fast — the
+clone was never the bottleneck). Supersedes the build-time half of decision #3
+(we still pin + read the vendored tree; we no longer compile it by default).

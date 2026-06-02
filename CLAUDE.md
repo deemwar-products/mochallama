@@ -18,8 +18,11 @@ see "Publish state" below.
 
 ## Modules (5 Gradle subprojects — `settings.gradle`)
 - **core** — FFM bindings + `ChatEngine` + `MochallamaClient` + C++ bridge
-  (`core/src/main/cpp`) + vendored llama.cpp (`core/src/main/native`, gitignored).
-  Bundles the native libs into the jar. Publishable.
+  (`core/src/main/cpp`). Native build (`:core:buildNative`) **downloads prebuilt
+  llama.cpp release libs** (mode=prebuilt, default; `-Pnative=source` to build
+  from the vendored tree) and compiles only the bridge — ~11s, no llama.cpp
+  compile. Bundles the per-platform native libs into the jar. Publishable.
+  See `docs/specs/03-decisions.md` §12.
 - **starter** — `mochallama-spring-boot-starter`: `@AutoConfiguration` for
   `LlamaCppService` (async load + state machine), OpenAI `/v1/chat/completions`
   (+SSE `stream:true`) + `/v1/models`, Actuator metrics/health. No spring-ai dep. Publishable.
