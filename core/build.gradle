@@ -95,12 +95,21 @@ tasks.register('buildNative') {
                     '-DCMAKE_BUILD_TYPE=Release'
         }
 
-        // Build
+        // Build. Cap parallelism: an UNBOUNDED `--parallel` spawns one heavy
+        // C++ compile per core, and llama.cpp's template-heavy model sources
+        // spike enough RAM to OOM-kill a CI runner (Linux died ~2m in at 83%
+        // with "runner received a shutdown signal"; the macos-13 Intel leg
+        // swap-thrashed for 24h — same root cause). 2 jobs is the safe default
+        // for GitHub-hosted runners; bump locally with -PnativeJobs=N. The
+        // `llamabridge` target pulls in only llama + llama-common + ggml* as
+        // deps, never the (already-excluded) examples/tools/server.
+        def nativeJobs = (project.findProperty('nativeJobs') ?: '2').toString()
         exec {
             workingDir cmakeBuildDir
             commandLine 'cmake', '--build', cmakeBuildDir.absolutePath,
                     '--config', 'Release',
-                    '--parallel'
+                    '--target', 'llamabridge',
+                    '--parallel', nativeJobs
         }
 
         // Stage artefacts. The vendored llama.cpp emits SONAME-versioned
