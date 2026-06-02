@@ -35,6 +35,10 @@ jobs:
     name: build (${{ matrix.native_key }})
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
+    # Hard cap so a flaky runner can never hang the release for 24h again
+    # (the macos-13 Intel leg did exactly that). The slowest leg is a clean
+    # macos-14 arm64 llama.cpp build (~95m), so 150m is generous headroom.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -43,11 +47,9 @@ jobs:
             native_key: linux-x86_64
             platkey: linux-x64
             experimental: false
-          # macos-13 is the last Intel macOS runner GitHub provides.
-          - os: macos-13
-            native_key: darwin-x86_64
-            platkey: darwin-x64
-            experimental: false
+          # darwin-x86_64 (Intel mac) is built + published LOCALLY from the dev
+          # machine — the macos-13 CI runner hung 24h, so it's dropped from the
+          # matrix on purpose. See CLAUDE.md "Publish state".
           - os: macos-14
             native_key: darwin-aarch64
             platkey: darwin-arm64
@@ -76,7 +78,19 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Cache the staged native libs keyed on the llama.cpp tag + our C bridge
+      # sources. On a hit, buildNative's outputs.upToDateWhen guard fires and
+      # the ~95m CMake/llama.cpp compile is skipped entirely — repeat releases
+      # for an unchanged bridge are then near-instant.
+      - name: Cache staged natives
+        id: cache-natives
+        uses: actions/cache@v4
+        with:
+          path: core/src/main/resources/native/${{ matrix.native_key }}
+          key: natives-${{ matrix.native_key }}-b9371-${{ hashFiles('core/src/main/cpp/**') }}
+
       - name: Clone vendored llama.cpp (pinned tag b9371)
+        if: steps.cache-natives.outputs.cache-hit != 'true'
         shell: bash
         run: |
           git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp \
@@ -154,8 +168,11 @@ jobs:
           retention-days: 30
 
   release:
-    name: assemble + publish GitHub Release
+    name: assemble release assets
     needs: build
+    # Run even if an experimental/failed leg dropped out — assemble from
+    # whatever artifacts the matrix did produce.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -226,7 +243,22 @@ jobs:
           echo "Release assets:"
           ls -la release-assets
 
+      # Always surface the assembled assets as a downloadable workflow artifact.
+      # This is the "just build, no push" path: a manual dispatch produces the
+      # Linux/Windows/arm64 binaries here, you `gh run download` them, combine
+      # with the locally-built darwin-x86_64, and publish from the dev machine.
+      - name: Upload combined release-assets bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets/*
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Push a GitHub Release ONLY for a real v* tag. Manual dispatches (and
+      # branch runs) just build + upload the artifact above — they never push.
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
