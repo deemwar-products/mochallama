@@ -406,6 +406,11 @@ jobs:
         run: |
           set -eu
           : "${CENTRAL_USERNAME:?set the CENTRAL_USERNAME repo secret}"
+          VER=$(grep -oE "version = '[0-9][^']*'" build.gradle | grep -oE '[0-9][^'\'']*')
+          # Idempotent: skip if this version is already on Maven Central.
+          if curl -sfo /dev/null "https://repo1.maven.org/maven2/io/github/deemwario/mochallama-core/${VER}/mochallama-core-${VER}.pom"; then
+            echo "Maven Central already has ${VER} — skipping Maven publish."; exit 0
+          fi
           # buildNative finds the host (linux) bridge already staged from the
           # artifact, so it stays up-to-date and does not recompile.
           ./gradlew publishAllPublicationsToCentralStagingRepository --no-daemon --stacktrace
