@@ -180,15 +180,18 @@ jobs:
 
       # --- CLI image + npm tarball (best-effort; failure here must not fail the
       # native/library artifact above). ---
+      # Pass the SAME -Pnative mode so jlink's transitive :core:buildNative stays
+      # up-to-date (a different mode changes the task input and re-runs it — which
+      # on Windows re-tried the prebuilt path that has no import .lib and failed).
       - name: Build jlink image (Unix)
         if: runner.os != 'Windows'
         continue-on-error: true
-        run: ./gradlew :cli:jlink --no-daemon --stacktrace
+        run: ./gradlew :cli:jlink -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
 
       - name: Build jlink image (Windows)
         if: runner.os == 'Windows'
         continue-on-error: true
-        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
+        run: .\gradlew.bat :cli:jlink -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
 
       - name: Stage jlink image into platform npm package
         continue-on-error: true

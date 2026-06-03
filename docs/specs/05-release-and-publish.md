@@ -123,9 +123,38 @@ runtimeOnly    'io.github.deemwar-products:mochallama-core:0.1.0:natives-linux-x
 ```
 (A future `-platform` aggregator POM can auto-select via `com.google.osdetector`.)
 
-- npm/CLI is already split the same way (per-platform `optionalDependencies`).
-- Cheap follow-up: drop the redundant 3rd versioned lib name
-  (`lib*.0.0.9371.dylib`) — loader needs only load-name + SONAME — trims natives ~⅓.
+- npm/CLI is already split the same way (per-platform `optionalDependencies`),
+  now including `linux-arm64`.
+- DONE: the redundant 3rd versioned lib name (`lib*.0.0.9371.dylib`) is no longer
+  staged (loader needs only load-name + SONAME) — native jars are ~⅓ smaller
+  (darwin-x86_64: 12 MB → 8.3 MB).
+
+### Consuming — three ways
+
+1. **Lean, explicit (recommended):** name your platform's classifier.
+   ```gradle
+   implementation 'io.github.deemwar-products:mochallama-core:0.1.0'
+   runtimeOnly    'io.github.deemwar-products:mochallama-core:0.1.0:natives-linux-x86_64'
+   ```
+2. **Lean, auto-select** (only your platform, via OS detection):
+   ```gradle
+   plugins { id 'com.google.osdetector' version '1.7.3' }
+   def mochaNative = [
+     'osx-x86_64':'natives-darwin-x86_64', 'osx-aarch_64':'natives-darwin-aarch64',
+     'linux-x86_64':'natives-linux-x86_64', 'linux-aarch_64':'natives-linux-aarch64',
+     'windows-x86_64':'natives-windows-x86_64',
+   ][osdetector.classifier]
+   dependencies {
+     implementation 'io.github.deemwar-products:mochallama-core:0.1.0'
+     runtimeOnly "io.github.deemwar-products:mochallama-core:0.1.0:${mochaNative}"
+   }
+   ```
+   (Maven: the same via `os-maven-plugin`'s `${os.detected.classifier}` + a profile map.)
+   The osdetector classifier (`osx-`, `aarch_64`) differs from ours (`darwin-`,
+   `aarch64`), hence the small map.
+3. **Zero-config, all platforms:** depend on the aggregator
+   `io.github.deemwar-products:mochallama-core-platform:0.1.0` — pulls Java +
+   every platform's native jar (bigger; works anywhere without naming a classifier).
 
 ## Out of scope for v0.1.x
 

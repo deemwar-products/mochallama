@@ -206,7 +206,18 @@ tasks.register('buildNative') {
                 return
             }
             def real = matches.find { !java.nio.file.Files.isSymbolicLink(it.toPath()) } ?: matches[0]
-            matches.unique { it.name }.each { src ->
+            // Keep ONLY the names the loader/links need: the plain load-name and the
+            // major SONAME (≤1 numeric version component). Drop the redundant fully
+            // versioned copy (libfoo.0.13.0.dylib / libfoo.so.0.13.0) — identical
+            // bytes, never linked — which trims each native jar by ~1/3.
+            def versionComponents = { String n ->
+                def after = n.substring(base.length())
+                def core = (nativeLibExt == '.so') ?
+                        after.replaceFirst(/^\.so/, '') :
+                        after.replaceFirst(java.util.regex.Pattern.quote(nativeLibExt) + '$', '')
+                core.tokenize('.').findAll { it ==~ /\d+/ }.size()
+            }
+            matches.unique { it.name }.findAll { versionComponents(it.name) <= 1 }.each { src ->
                 def dst = new File(nativeResDir, src.name)
                 dst.bytes = real.bytes
                 logger.lifecycle("Staged ${src.name} (${real.length()} bytes)")
@@ -306,6 +317,37 @@ publishing {
                     connection = 'scm:git:https://github.com/deemwar-products/mochallama.git'
                     developerConnection = 'scm:git:ssh://git@github.com/deemwar-products/mochallama.git'
                     url = 'https://github.com/deemwar-products/mochallama'
+                }
+            }
+        }
+
+        // Zero-config convenience: `mochallama-core-platform` is a POM-only
+        // aggregator that pulls Java core + EVERY staged platform's native jar.
+        // Consumers who don't want to name a classifier just depend on this
+        // (it carries all platforms — bigger, but works anywhere). The lean path
+        // stays the default: depend on mochallama-core + your one
+        // `:natives-<os>-<arch>` classifier (see docs/specs/05). Lists whatever
+        // platforms are staged at publish time (all of them after release:download).
+        platform(MavenPublication) {
+            artifactId = 'mochallama-core-platform'
+            pom {
+                packaging = 'pom'
+                name = 'mochallama-core-platform'
+                description = 'Aggregator: mochallama-core + all platform native jars (zero-config, all platforms).'
+                url = 'https://github.com/deemwar-products/mochallama'
+                licenses { license { name = 'MIT License'; url = 'https://opensource.org/licenses/MIT' } }
+                withXml {
+                    def deps = asNode().appendNode('dependencies')
+                    def addDep = { String classifier ->
+                        def d = deps.appendNode('dependency')
+                        d.appendNode('groupId', project.group.toString())
+                        d.appendNode('artifactId', 'mochallama-core')
+                        d.appendNode('version', project.version.toString())
+                        d.appendNode('scope', 'runtime')
+                        if (classifier) d.appendNode('classifier', classifier)
+                    }
+                    addDep(null)  // the Java jar
+                    platformsToPackage.each { addDep("natives-${it}".toString()) }
                 }
             }
         }
