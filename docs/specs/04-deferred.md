@@ -30,18 +30,17 @@ breadcrumb so the history is legible:
 
 See `streaming-and-tools.md` and `observability.md` for the full surfaces.
 
-## Cross-OS native binaries
+## Cross-OS native binaries — SHIPPED (2026-06)
 
-- **Today:** macOS Intel `x86_64` only. `src/main/resources/native/` has
-  one platform directory (`darwin-x86_64`).
-- **Needed platforms:**
-  - `darwin-aarch64` (Apple Silicon, Metal-enabled).
-  - `linux-x86_64` (CPU + optional CUDA variant).
-  - `linux-aarch64` (server-side ARM).
-  - `windows-x86_64` (CPU; DirectML / CUDA later).
-- **Plan:** GitHub Actions matrix build, one runner per `(os, arch)`,
-  publishing a resources jar per platform. The `NativeLoader` already
-  picks up the right directory based on `os.name` + `os.arch`.
+Now covers **5 platforms**, each a per-platform classifier jar
+(`mochallama-core:<ver>:natives-<os>-<arch>`) + a `mochallama-core-platform`
+aggregator:
+- `darwin-x86_64` (built locally), `darwin-aarch64`, `linux-x86_64`,
+  `linux-aarch64`, `windows-x86_64`.
+- macOS x64 = prebuilt; the rest = source build in CI (single ggml-cpu, no Metal/
+  split-cpu surprises). A per-leg native-load smoke test gates each.
+- Remaining gaps: Windows ARM64, GPU backends. See `03-decisions.md` §12/§12a
+  and `05-release-and-publish.md`.
 
 ## Library packaging / Maven publish
 

@@ -42,9 +42,10 @@ Be honest with prospective users about all of this up front:
 
 - **Single host, single process.** No clustering, no horizontal scaling, no
   multi-tenant model loading. One model per JVM.
-- **CPU only, Intel Mac only, today.** Metal / CUDA / Vulkan are gated off
-  in `CMakeLists.txt`. Apple Silicon (`darwin-aarch64`) is not built or
-  shipped yet. Linux and Windows binaries are not built or shipped yet.
+- **CPU only, but 5 platforms.** macOS Intel + Apple Silicon, Linux x86-64 +
+  ARM64, Windows x86-64 all ship (per-platform native jars). Metal / CUDA /
+  Vulkan are gated off in `CMakeLists.txt` — a build-flag away. Windows ARM64 is
+  the remaining gap.
 - **No tool calling.** The `ChatCompletionRequest` does not model `tools`
   or `tool_choice`; the bridge has no facility for it.
 - **No streaming.** `stream: true` returns HTTP 501. There is no SSE

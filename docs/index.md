@@ -21,9 +21,9 @@ hero:
 
 features:
   - title: No JNI, all Panama FFM
-    details: The Java side binds the native bridge through the JDK 22 Foreign Function & Memory API — no JNI and no native compilation in the Java toolchain.
-  - title: Vendored llama.cpp
-    details: Upstream llama.cpp lives in-tree as a CMake subproject. A custom Gradle buildNative task compiles it and stages the dylibs into the JAR under platform-specific resources.
+    details: The Java side binds a thin C++ bridge through the JDK 22 Foreign Function & Memory API — no JNI. The CLI even bundles JDK 22, so end users need no Java.
+  - title: Prebuilt llama.cpp, 5 platforms
+    details: Downloads llama.cpp's official prebuilt binaries (no compiling) and compiles only the tiny bridge. Ships per-platform native jars for macOS Intel + Apple Silicon, Linux x86-64 + ARM64, and Windows x86-64.
   - title: OpenAI-compatible — streaming + tools
     details: POST /v1/chat/completions speaks the OpenAI wire format with SSE streaming, tool calling, and real token usage. GET /v1/models works with any OpenAI client or the openai SDK pointed at http://localhost:8080/v1.
   - title: Spring-first, autoconfigured
