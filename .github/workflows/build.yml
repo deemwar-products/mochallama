@@ -1,26 +1,25 @@
-# CI: build the vendored llama.cpp + bridge on every supported target and
-# upload the resulting native shared libraries as artifacts.
+# CI: fast compile sanity check on every push / PR.
 #
-# The Gradle `buildNative` task currently stages dylibs into
-# src/main/resources/native/darwin-x86_64/ on every host (it's hard-coded —
-# see build.gradle). To work around that without editing build.gradle, this
-# workflow snapshots the CMake build output directory itself, which contains
-# the platform-correct shared libs (.so on Linux, .dll on Windows, .dylib on
-# macOS) and uploads those under a platform-keyed artifact name. The
-# downstream release workflow re-stages them under the right resources path
-# before assembling the fat JAR.
+# This is intentionally LIGHT — a single ubuntu job that only verifies the
+# Java/Gradle build compiles. It does NOT build the native llama.cpp libs
+# (that's slow and platform-specific); `buildNative` is excluded with -x.
 #
-# TODO: once build.gradle learns to derive the staging dir from the host
-# os/arch, drop the CMake-dir snapshot and upload src/main/resources/native/
-# directly.
-
+# Cross-platform native builds + release assets live in release.yml (tags),
+# so this workflow no longer fans out a 4-platform matrix on every push and
+# no longer jams the scarce macOS runners.
 name: build
 
 on:
   push:
     branches: [main, master, dev]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
     branches: [main, master, dev]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
 
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
@@ -30,36 +29,10 @@ permissions:
   contents: read
 
 jobs:
-  native:
-    name: native (${{ matrix.native_dir }})
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            native_dir: linux-x86_64
-            experimental: false
-          # macos-13 is the last Intel macOS runner GitHub provides. If
-          # GitHub retires it, fall back to macos-latest (arm64) and add
-          # self-hosted runners for Intel mac coverage.
-          # TODO: self-host an Intel mac once macos-13 is gone.
-          - os: macos-13
-            native_dir: darwin-x86_64
-            experimental: false
-          - os: macos-14
-            native_dir: darwin-aarch64
-            experimental: false
-          # TODO: Windows currently fails — the CMake config in
-          # src/main/cpp/CMakeLists.txt targets macOS (Accelerate, @loader_path
-          # rpaths). Marked continue-on-error so the rest of the matrix
-          # still publishes artifacts. Fix by gating mac-only bits behind
-          # `if(APPLE)` in CMakeLists.
-          - os: windows-latest
-            native_dir: windows-x86_64
-            experimental: true
-
+  compile:
+    name: compile check (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,66 +42,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '22'
+          cache: gradle
 
-      - name: Set up CMake
-        uses: lukka/get-cmake@latest
-
-      - name: Set up MSVC (Windows only)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Clone vendored llama.cpp (pinned tag b9371)
-        shell: bash
-        run: |
-          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp src/main/native/llama.cpp
-
-      - name: Build native (Unix)
-        if: runner.os != 'Windows'
-        run: ./gradlew buildNative --no-daemon --stacktrace
-
-      - name: Build native (Windows)
-        if: runner.os == 'Windows'
-        run: .\gradlew.bat buildNative --no-daemon --stacktrace
-
-      - name: Stage native artifacts into platform dir
-        shell: bash
-        run: |
-          set -eu
-          dest="src/main/resources/native/${{ matrix.native_dir }}"
-          mkdir -p "$dest"
-          # Gradle's buildNative already drops macOS dylibs into
-          # src/main/resources/native/darwin-x86_64/. For Linux/Windows we
-          # have to harvest the CMake output directly because build.gradle
-          # is mac-only.
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            find build/native-cmake -maxdepth 3 -type f \( -name '*.so' -o -name '*.so.*' \) -print -exec cp -P {} "$dest/" \; || true
-          elif [ "${{ runner.os }}" = "Windows" ]; then
-            find build/native-cmake -maxdepth 3 -type f \( -name '*.dll' -o -name '*.lib' \) -print -exec cp -P {} "$dest/" \; || true
-          else
-            # macOS: build.gradle already staged dylibs under darwin-x86_64.
-            # On macos-14 (arm64) rename the dir so the artifact reflects host.
-            if [ "${{ matrix.native_dir }}" = "darwin-aarch64" ] && [ -d "src/main/resources/native/darwin-x86_64" ]; then
-              mkdir -p "$dest"
-              cp -R src/main/resources/native/darwin-x86_64/. "$dest/"
-            fi
-          fi
-          echo "Contents of $dest:"
-          ls -la "$dest" || true
-
-      - name: Run tests (Unix)
-        if: runner.os != 'Windows'
-        run: ./gradlew test --no-daemon --stacktrace
-        continue-on-error: true
-
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: .\gradlew.bat test --no-daemon --stacktrace
-        continue-on-error: true
-
-      - name: Upload native artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-${{ matrix.native_dir }}
-          path: src/main/resources/native/${{ matrix.native_dir }}/
-          if-no-files-found: warn
-          retention-days: 14
+      # -x buildNative: compilation does not need the dylibs (they're a runtime
+      # resource), so skip the expensive CMake/llama.cpp build for this check.
+      - name: Compile (no native, no tests)
+        run: ./gradlew compileJava compileTestJava -x buildNative --no-daemon --stacktrace
