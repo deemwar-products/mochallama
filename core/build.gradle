@@ -103,9 +103,21 @@ tasks.register('buildNative') {
     inputs.property 'nativeMode', nativeMode
     outputs.dir nativeResDir
     // If the bridge library is already staged and intact, skip the whole round-trip.
+    // NOTE: upToDateWhen only helps when Gradle has prior execution history for this
+    // task. On a FRESH machine (CI checkout) there is none, so the task would still
+    // run — re-downloading/compiling in prebuilt mode and clobbering pre-staged libs.
     outputs.upToDateWhen {
         def bridge = new File(nativeResDir, "${nativeLibPrefix}llamabridge${nativeLibExt}")
         bridge.exists() && bridge.length() > 0
+    }
+    // Hard skip for the two-tier release pipeline: when -PuseStagedNatives is set and
+    // the bridge is already staged (downloaded from the natives-b9371 release), do
+    // NOT run at all. onlyIf is evaluated with no execution history, unlike
+    // upToDateWhen — so this genuinely prevents the fresh-CI prebuilt rebuild that
+    // would otherwise overwrite the correct source-built natives.
+    onlyIf {
+        def bridge = new File(nativeResDir, "${nativeLibPrefix}llamabridge${nativeLibExt}")
+        !(project.hasProperty('useStagedNatives') && bridge.exists() && bridge.length() > 0)
     }
 
     doLast {

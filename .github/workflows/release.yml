@@ -75,8 +75,9 @@ jobs:
           if curl -sfo /dev/null "https://repo1.maven.org/maven2/io/github/deemwario/mochallama-core/${VER}/mochallama-core-${VER}.pom"; then
             echo "Maven Central already has ${VER} — skipping."; exit 0
           fi
-          # buildNative is up-to-date (bridge already staged) so nothing compiles.
-          ./gradlew publishAllPublicationsToCentralStagingRepository --no-daemon --stacktrace
+          # -PuseStagedNatives makes buildNative HARD-SKIP (onlyIf) since the bridge
+          # is already staged — nothing compiles, the downloaded source natives stand.
+          ./gradlew publishAllPublicationsToCentralStagingRepository -PuseStagedNatives --no-daemon --stacktrace
           ( cd build/central-staging && zip -qr ../central-bundle.zip . -x '*.DS_Store' -x '*maven-metadata*' )
           echo "signatures: $(unzip -l build/central-bundle.zip | grep -c '\.asc$')"
           TOKEN=$(printf '%s' "$CENTRAL_USERNAME:$CENTRAL_PASSWORD" | base64)
@@ -122,13 +123,24 @@ jobs:
           unzip -o dl/*.zip -d core/src/main/resources/native/ >/dev/null
           ls -1 "core/src/main/resources/native/${{ matrix.native_key }}"
 
+      # Load oracle: prove the DOWNLOADED natives actually load on THIS platform
+      # before we package + publish them (catches a Metal/split-ggml/bad-closure
+      # mismatch that a green jlink would not). buildNative hard-skips (staged).
+      - name: Native load smoke (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew :core:test --tests '*NativeLoadSmoke*' -PuseStagedNatives --no-daemon --stacktrace
+
+      - name: Native load smoke (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :core:test --tests "*NativeLoadSmoke*" -PuseStagedNatives --no-daemon --stacktrace
+
       - name: Build jlink image (Unix)
         if: runner.os != 'Windows'
-        run: ./gradlew :cli:jlink --no-daemon --stacktrace
+        run: ./gradlew :cli:jlink -PuseStagedNatives --no-daemon --stacktrace
 
       - name: Build jlink image (Windows)
         if: runner.os == 'Windows'
-        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
+        run: .\gradlew.bat :cli:jlink -PuseStagedNatives --no-daemon --stacktrace
 
       - name: Stage jlink image into platform npm package
         shell: bash
@@ -218,7 +230,7 @@ jobs:
 
       - name: Assemble app fat JAR (best-effort)
         continue-on-error: true
-        run: ./gradlew :app:bootJar --no-daemon --stacktrace
+        run: ./gradlew :app:bootJar -PuseStagedNatives --no-daemon --stacktrace
 
       - name: Collect release assets
         shell: bash
