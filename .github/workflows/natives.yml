@@ -43,7 +43,10 @@ jobs:
           - { os: ubuntu-latest,    native_key: linux-x86_64,   native_mode: source, experimental: false }
           - { os: ubuntu-24.04-arm, native_key: linux-aarch64,  native_mode: source, experimental: false }
           - { os: macos-14,         native_key: darwin-aarch64, native_mode: source, experimental: false }
-          - { os: macos-13,         native_key: darwin-x86_64,  native_mode: source, experimental: true  }
+          # darwin-x86_64 (Intel mac) is NOT built in CI — macos-13 runners are
+          # scarce and would stall the `store` job (needs: build waits on every
+          # leg). It is seeded locally from an Intel mac (see header), and the
+          # store job never deletes that asset.
           - { os: windows-latest,   native_key: windows-x86_64, native_mode: source, experimental: true  }
 
     steps:
