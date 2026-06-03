@@ -75,7 +75,7 @@ task cli:npm:publish         # publishes darwin-x64 platform pkg + launcher (pub
 → `npx @deemwarhq/mochallama chat` works.
 
 ### 2d. Maven Central  (one-time setup — see PUBLISHING.md §Tier 3)
-Needs a Central Portal account (`io.github.deemwar-products`, GitHub-verified) +
+Needs a Central Portal account (`io.github.deemwario`, GitHub-verified) +
 GPG key + the gradle signing plumbing. Until then, consumers use `~/.m2` (2b) or JitPack off the tag.
 
 ### 2e. Cut the official GitHub Release (the only "push")
@@ -90,8 +90,8 @@ git tag v0.1.0 && git push origin v0.1.0   # release.yml attaches all platform a
 The library now ships Java-only core + per-platform native jars (not a 40MB fat jar):
 ```gradle
 dependencies {
-  implementation 'io.github.deemwar-products:mochallama-core:0.1.0'        // Java, ~40KB
-  runtimeOnly    'io.github.deemwar-products:mochallama-core:0.1.0:natives-linux-x86_64'  // their platform
+  implementation 'io.github.deemwario:mochallama-core:0.1.0'        // Java, ~40KB
+  runtimeOnly    'io.github.deemwario:mochallama-core:0.1.0:natives-linux-x86_64'  // their platform
 }
 ```
 Platforms shipped: `natives-darwin-x86_64`, `natives-darwin-aarch64`,
