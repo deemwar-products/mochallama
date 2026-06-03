@@ -208,3 +208,68 @@ in one coordinated commit, separately from the design-journal work.
 imports, gradle config, resources path is fine since it's
 `/native/<platform>/`). Folding it into the design work would make the
 diff unreadable. Tracked as a follow-up.
+
+## 12. Download prebuilt llama.cpp instead of compiling it (2026-06-02)
+
+**Decision:** `buildNative` defaults to **mode=prebuilt**: download llama.cpp's
+official release binaries for the host platform
+(`llama-b9371-bin-{macos-x64,macos-arm64,ubuntu-x64,win-cpu-x64}`), and compile
+**only** our 1-file `llamabridge` against vendored headers. `-Pnative=source`
+keeps the old from-source build as a fallback.
+
+**Rejected:**
+- Continuing to compile vendored llama.cpp from source (decision #3) on every
+  build/CI leg.
+- Dropping the bridge for pure-Java Panama over `llama.h` — `common_chat_*` /
+  `common_sampler_*` are a **C++ ABI** (mangled, STL args) FFM can't bind; the
+  `extern "C"` bridge exists precisely for this (decisions #1–2). Confirmed.
+
+**Why:**
+- The from-source build was the entire pain: ~95 min, and an unbounded
+  `cmake --build --parallel` OOM-killed CI runners (Linux died ~2 min in at 83%;
+  the macos-13 Intel leg swap-thrashed for 24 h — one root cause). Downloading
+  prebuilt libs + compiling only the tiny bridge is **~11 s** and cannot OOM.
+- Upstream ships prebuilt `libllama` + `libggml*` + `libllama-common` for every
+  platform we target, pinned to the same tag we already vendor headers from.
+- Consumer experience is unchanged — the jar still bundles per-platform native
+  libs; this only changes how *we* produce them.
+
+**Gotcha (encoded in `core/build.gradle`):** the prebuilt `libllama` links
+`@rpath/libggml-rpc`, which the from-source build never emitted — so the staged
+closure must include `ggml-rpc` or the library fails to load at runtime.
+
+**Cost:** A shallow llama.cpp checkout is still needed for headers (fast — the
+clone was never the bottleneck). Supersedes the build-time half of decision #3
+(we still pin + read the vendored tree; we no longer compile it by default).
+
+### 12a. Per-platform refinement: prebuilt only where ggml-cpu is single (2026-06-02)
+
+**Finding:** the **linux and windows** prebuilt releases ship a *split*
+`ggml-cpu` — ~15 arch-specific libs (`ggml-cpu-haswell`, `ggml-cpu-zen4`, …)
+runtime-dispatched via `GGML_BACKEND_DL`, with **no single `ggml-cpu`** and no
+`ggml-blas`. `NativeLoader` loads an explicit dependency chain, so that split set
+doesn't load. The **macOS** prebuilts (x64 + arm64) ship a *single* `ggml-cpu`,
+which loads cleanly. Windows additionally ships **no import `.lib`** for MSVC.
+
+**Decision (final, after the smoke oracle caught three distinct failures):**
+- **macOS x64 → prebuilt**, built **locally** on the dev Intel Mac. The x64
+  prebuilt has a single ggml-cpu and **no Metal** dep, so it loads. (~11s.)
+- **linux + macOS arm64 + windows → build from source** in CI (one `ggml-cpu`,
+  `GGML_OPENMP` + `GGML_NATIVE` OFF → no `libomp`/`vcomp` dep, portable baseline;
+  MSVC produces its own import libs). Source sidesteps every prebuilt landmine:
+  - linux/windows prebuilt = split ggml-cpu (no single) — won't load.
+  - **arm64 prebuilt `libggml` hard-links `@rpath/libggml-metal`** — we don't
+    bundle Metal, so it `UnsatisfiedLinkError`s. (Metal accel = future work.)
+  - windows prebuilt = no import `.lib` for MSVC linking.
+- `NativeLoader` made tolerant: load each bundled lib by absolute path, **skip**
+  any stem not present (blas/rpc vary), require only that `llamabridge` loads.
+- **Native staging bug fixed:** the lib-name glob's `.dll.` mid-name rule matched
+  MSBuild's `*.dll.recipe` intermediates and copied their bytes over the real DLL
+  ("%1 is not a valid Win32 application"). Restricted the mid-name rule to Linux
+  `.so`; exact-extension match for `.dylib`/`.dll`.
+- A **native load smoke test** (`NativeLoadSmokeTest`, calls `llb_version`, no
+  model) runs in CI on every leg — the runtime oracle that caught all three of
+  the above (each had a *green build* but failed to load).
+
+**Revisit:** prebuilt for linux/windows/arm64 (wiring `GGML_BACKEND_DL` discovery +
+bundling Metal) would drop the source compile; deferred until the smoke verifies it.

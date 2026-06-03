@@ -1,123 +1,106 @@
-# CMakeLists.txt for the llamavector-java native bridge.
+# CMakeLists.txt for the mochallama native bridge.
 #
-# Builds two shared libraries:
-#   - libllama.dylib (+ libggml*.dylib) via vendored llama.cpp at
-#     ../native/llama.cpp
-#   - libllamabridge.dylib — our thin C wrapper that exposes a stable
-#     ABI to Java (Panama FFM).
+# Builds ONE shared library — libllamabridge — our thin C wrapper that exposes
+# a stable C ABI to Java (Panama FFM) over llama.cpp's C++ common_chat /
+# common_sampler APIs.
 #
-# Target: macOS Intel x86_64. CPU-only — Metal is OFF because the host
-# is a 7th-gen Intel iGPU (no Apple Silicon GPU).
+# TWO modes (selected by Gradle :core:buildNative):
 #
-# Output layout (after `cmake --build`):
-#   build/bin/libllama.dylib
-#   build/bin/libggml.dylib
-#   build/bin/libggml-base.dylib
-#   build/bin/libggml-cpu.dylib
-#   build/bin/libggml-blas.dylib     (Accelerate backend, if enabled)
-#   build/libllamabridge.dylib
+#  1. PREBUILT (default) — `-DLLB_PREBUILT_DIR=<dir>` points at extracted
+#     llama.cpp official release libs (libllama / libggml* / libllama-common).
+#     We link the bridge against those by path and DO NOT compile llama.cpp.
+#     This is the fast, no-OOM path. Headers come from `-DLLB_HEADERS_DIR`
+#     (a shallow llama.cpp source checkout — headers only, never compiled).
 #
-# Invoked from Gradle via the `buildNative` task — see ../../build.gradle.
+#  2. SOURCE (fallback, `-Pnative=source`) — no LLB_PREBUILT_DIR; we
+#     add_subdirectory() the vendored llama.cpp and build it from source
+#     (the old behaviour). Kept so a bad upstream asset can't brick the build.
+#
+# Output: libllamabridge.<dylib|so|dll> in the CMake build dir; Gradle stages
+# it next to the (prebuilt or freshly built) llama/ggml libs under
+# core/src/main/resources/native/<platform-key>/.
 
 cmake_minimum_required(VERSION 3.18)
-# The bridge is C++ now (it drives llama.cpp's common_chat / common_sampler
-# APIs, which are C++), but still exports a pure C ABI via extern "C".
 project(llamabridge CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# ---------------------------------------------------------------------
-# Vendored llama.cpp configuration
-# ---------------------------------------------------------------------
-# Toggle the parts of llama.cpp we DON'T want before we add the subdir.
-# These must be set as cache vars so the subproject sees them.
+# Headers root (llama.cpp source tree — used in BOTH modes for include paths).
+set(LLB_HEADERS_DIR "${CMAKE_SOURCE_DIR}/../native/llama.cpp"
+    CACHE PATH "llama.cpp source root (headers only in prebuilt mode)")
 
-set(LLAMA_BUILD_TESTS     OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_SERVER    OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_TOOLS     OFF CACHE BOOL "" FORCE)
-set(LLAMA_CURL            OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS     ON  CACHE BOOL "" FORCE)
-
-# We need the "common" utils library (common_chat_* / common_sampler_*).
-# It is only built when LLAMA_BUILD_COMMON is ON; that defaults to
-# LLAMA_STANDALONE, which is OFF when llama.cpp is consumed as a subdirectory.
-# Force it ON so the `llama-common` target (+ its cpp-httplib dep) exists.
-set(LLAMA_BUILD_COMMON    ON  CACHE BOOL "" FORCE)
-# The HTML/UI bundle is server-only; we don't need it and it slows the build.
-set(LLAMA_BUILD_UI        OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_HTML      OFF CACHE BOOL "" FORCE)
-# Drop the OpenSSL dependency pulled in by cpp-httplib's download support: we
-# only use common_chat_* / common_sampler_*, never the HTTP(S) downloader, and
-# the default links Homebrew OpenSSL via an absolute path that is not portable
-# in the published JAR.
-set(LLAMA_OPENSSL         OFF CACHE BOOL "" FORCE)
-
-# CPU-only across all platforms (no GPU backends). Apple gets the Accelerate
-# BLAS backend (present on every macOS, fast); other platforms run plain CPU
-# — portable, no external BLAS dependency for the multi-platform release.
-# (OpenBLAS can be added per-OS later for a throughput bump.)
-set(GGML_METAL            OFF CACHE BOOL "" FORCE)
-set(GGML_CUDA             OFF CACHE BOOL "" FORCE)
-set(GGML_VULKAN           OFF CACHE BOOL "" FORCE)
-set(GGML_HIP              OFF CACHE BOOL "" FORCE)
-if(APPLE)
-    set(GGML_ACCELERATE   ON  CACHE BOOL "" FORCE)
-    set(GGML_BLAS         ON  CACHE BOOL "" FORCE)
-    set(GGML_BLAS_VENDOR  "Apple" CACHE STRING "" FORCE)
-else()
-    set(GGML_ACCELERATE   OFF CACHE BOOL "" FORCE)
-    set(GGML_BLAS         OFF CACHE BOOL "" FORCE)
-endif()
-
-# Vendored llama.cpp lives next to the bridge source under src/main/native.
-set(LLAMA_CPP_DIR "${CMAKE_SOURCE_DIR}/../native/llama.cpp"
-    CACHE PATH "Path to vendored llama.cpp")
-
-if(NOT EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt")
-    message(FATAL_ERROR
-        "Vendored llama.cpp not found at ${LLAMA_CPP_DIR}. "
-        "Run the clone step before building.")
-endif()
-
-add_subdirectory("${LLAMA_CPP_DIR}" llama-build EXCLUDE_FROM_ALL)
-
-# ---------------------------------------------------------------------
-# Bridge library
-# ---------------------------------------------------------------------
-
-add_library(llamabridge SHARED
-    src/llamabridge.cpp
-)
+add_library(llamabridge SHARED src/llamabridge.cpp)
 
 target_include_directories(llamabridge
     PUBLIC  include
-    PRIVATE "${LLAMA_CPP_DIR}/include"
-            "${LLAMA_CPP_DIR}/ggml/include"
-            "${LLAMA_CPP_DIR}/common"
-            "${LLAMA_CPP_DIR}/vendor"
+    PRIVATE "${LLB_HEADERS_DIR}/include"
+            "${LLB_HEADERS_DIR}/ggml/include"
+            "${LLB_HEADERS_DIR}/common"
+            "${LLB_HEADERS_DIR}/vendor"
 )
 
-# Stamp build identity into the bridge so llb_version() is meaningful.
 target_compile_definitions(llamabridge PRIVATE
     LLB_BRIDGE_VERSION="0.2.0"
     LLB_LLAMA_TAG="b9371"
 )
 
-# Link against the targets produced by the vendored subproject:
-#   - llama        : core inference + tokenizer
-#   - llama-common : common_chat_* / common_sampler_* helpers (prompt
-#                    building, tool-call grammar synthesis, sampling chain).
-# The common target is named "llama-common" in this tag's CMake (see
-# common/CMakeLists.txt). It pulls in ggml transitively via llama.
-target_link_libraries(llamabridge PRIVATE llama llama-common)
+# MSVC does not export DLL symbols by default (Unix exports everything). Without
+# this, the bridge DLL loads but Java can't find llb_chat_create / llb_version
+# etc. ("Symbol not found in libllamabridge"). Auto-export the whole extern-"C"
+# surface so the Windows DLL matches the macOS/Linux default visibility.
+set_target_properties(llamabridge PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-# Resolve sibling shared libs (llama, ggml*) at runtime from the same
-# directory as the bridge — that's where Gradle/CI stage them. rpath syntax
-# is per-OS: macOS uses @loader_path, Linux uses $ORIGIN, Windows resolves
-# DLLs from the executable/library directory + PATH (no rpath concept).
+if(DEFINED LLB_PREBUILT_DIR AND NOT LLB_PREBUILT_DIR STREQUAL "")
+    # -------------------- PREBUILT MODE --------------------
+    message(STATUS "llamabridge: linking against PREBUILT llama.cpp in ${LLB_PREBUILT_DIR}")
+    if(NOT EXISTS "${LLB_HEADERS_DIR}/include/llama.h")
+        message(FATAL_ERROR "Headers not found at ${LLB_HEADERS_DIR} (need a shallow llama.cpp checkout for headers).")
+    endif()
+    find_library(LLB_LIB_LLAMA  NAMES llama        PATHS "${LLB_PREBUILT_DIR}" NO_DEFAULT_PATH REQUIRED)
+    find_library(LLB_LIB_COMMON NAMES llama-common PATHS "${LLB_PREBUILT_DIR}" NO_DEFAULT_PATH REQUIRED)
+    target_link_libraries(llamabridge PRIVATE "${LLB_LIB_LLAMA}" "${LLB_LIB_COMMON}")
+else()
+    # -------------------- SOURCE MODE (fallback) --------------------
+    message(STATUS "llamabridge: building llama.cpp FROM SOURCE (fallback mode)")
+    set(LLAMA_BUILD_TESTS     OFF CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_EXAMPLES  OFF CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_SERVER    OFF CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_TOOLS     OFF CACHE BOOL "" FORCE)
+    set(LLAMA_CURL            OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS     ON  CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_COMMON    ON  CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_UI        OFF CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_HTML      OFF CACHE BOOL "" FORCE)
+    set(LLAMA_OPENSSL         OFF CACHE BOOL "" FORCE)
+    # Single ggml-cpu for the host arch (NOT the split runtime-dispatch variants
+    # that the prebuilt release packages ship) — keeps the runtime closure simple
+    # and matches NativeLoader's load order. No OpenMP so Windows doesn't pull a
+    # vcomp/libomp runtime dependency into the staged set.
+    set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
+    set(GGML_NATIVE          OFF CACHE BOOL "" FORCE)
+    set(GGML_METAL            OFF CACHE BOOL "" FORCE)
+    set(GGML_CUDA             OFF CACHE BOOL "" FORCE)
+    set(GGML_VULKAN           OFF CACHE BOOL "" FORCE)
+    set(GGML_HIP              OFF CACHE BOOL "" FORCE)
+    if(APPLE)
+        set(GGML_ACCELERATE   ON  CACHE BOOL "" FORCE)
+        set(GGML_BLAS         ON  CACHE BOOL "" FORCE)
+        set(GGML_BLAS_VENDOR  "Apple" CACHE STRING "" FORCE)
+    else()
+        set(GGML_ACCELERATE   OFF CACHE BOOL "" FORCE)
+        set(GGML_BLAS         OFF CACHE BOOL "" FORCE)
+    endif()
+    if(NOT EXISTS "${LLB_HEADERS_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR "Vendored llama.cpp not found at ${LLB_HEADERS_DIR}. Clone it before building.")
+    endif()
+    add_subdirectory("${LLB_HEADERS_DIR}" llama-build EXCLUDE_FROM_ALL)
+    target_link_libraries(llamabridge PRIVATE llama llama-common)
+endif()
+
+# Resolve sibling shared libs (llama, ggml*) at runtime from the bridge's own
+# directory — that's where Gradle/CI stage them. Per-OS rpath syntax.
 if(APPLE)
     set_target_properties(llamabridge PROPERTIES
         INSTALL_RPATH            "@loader_path"

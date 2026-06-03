@@ -27,5 +27,13 @@ subprojects {
         jvmArgs '--add-modules=jdk.incubator.vector',
                 '--enable-native-access=ALL-UNNAMED'
         useJUnitPlatform()
+        // Print full exception detail + native stdout/stderr to the console so
+        // CI shows WHY a native load failed (UnsatisfiedLinkError reason) instead
+        // of hiding it in the HTML report on the runner.
+        testLogging {
+            events 'passed', 'skipped', 'failed'
+            exceptionFormat 'full'
+            showStandardStreams true
+        }
     }
 }

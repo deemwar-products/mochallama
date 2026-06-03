@@ -35,28 +35,46 @@ jobs:
     name: build (${{ matrix.native_key }})
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental }}
+    # Hard cap so a flaky runner can never hang the release for 24h again
+    # (the macos-13 Intel leg did exactly that). The slowest leg is a clean
+    # macos-14 arm64 llama.cpp build (~95m), so 150m is generous headroom.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
         include:
+          # Linux: build from SOURCE. The prebuilt linux release ships a SPLIT
+          # ggml-cpu (15 arch dylibs, runtime-dispatched) + no single ggml-cpu —
+          # incompatible with NativeLoader. A source build yields one ggml-cpu.
           - os: ubuntu-latest
             native_key: linux-x86_64
             platkey: linux-x64
+            native_mode: source
             experimental: false
-          # macos-13 is the last Intel macOS runner GitHub provides.
-          - os: macos-13
-            native_key: darwin-x86_64
-            platkey: darwin-x64
+          # Linux ARM64 (AWS Graviton, cloud ARM, Raspberry Pi) — free GitHub
+          # ARM runner, source build (same single-ggml-cpu reason as x86_64).
+          - os: ubuntu-24.04-arm
+            native_key: linux-aarch64
+            platkey: linux-arm64
+            native_mode: source
             experimental: false
+          # darwin-aarch64 (Apple Silicon / M1): SOURCE — the macOS arm64 prebuilt
+          # libggml hard-links @rpath/libggml-metal (Metal GPU backend) which we
+          # don't bundle, so it fails to load. A CPU-only source build avoids the
+          # Metal dependency (Metal accel is a future enhancement). darwin-x86_64
+          # (Intel) is built LOCALLY: its prebuilt has no Metal dep and loads.
           - os: macos-14
             native_key: darwin-aarch64
             platkey: darwin-arm64
+            native_mode: source
             experimental: false
-          # Windows CMake config still has mac-isms (Accelerate / @loader_path);
-          # allowed to fail so the rest of the matrix still produces assets.
+          # Windows: build from SOURCE too (same split-ggml-cpu reason as Linux,
+          # plus the prebuilt zip ships no import .lib for MSVC linking). Still
+          # experimental until the native smoke passes here.
           - os: windows-latest
             native_key: windows-x86_64
             platkey: win32-x64
+            native_mode: source
             experimental: true
 
     steps:
@@ -76,7 +94,19 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Cache the staged native libs keyed on the llama.cpp tag + our C bridge
+      # sources. On a hit, buildNative's outputs.upToDateWhen guard fires and
+      # the ~95m CMake/llama.cpp compile is skipped entirely — repeat releases
+      # for an unchanged bridge are then near-instant.
+      - name: Cache staged natives
+        id: cache-natives
+        uses: actions/cache@v4
+        with:
+          path: core/src/main/resources/native/${{ matrix.native_key }}
+          key: natives-${{ matrix.native_key }}-b9371-${{ hashFiles('core/src/main/cpp/**') }}
+
       - name: Clone vendored llama.cpp (pinned tag b9371)
+        if: steps.cache-natives.outputs.cache-hit != 'true'
         shell: bash
         run: |
           git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp \
@@ -84,11 +114,22 @@ jobs:
 
       - name: Build native libs (Unix)
         if: runner.os != 'Windows'
-        run: ./gradlew :core:buildNative --no-daemon --stacktrace
+        run: ./gradlew :core:buildNative -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
 
       - name: Build native libs (Windows)
         if: runner.os == 'Windows'
-        run: .\gradlew.bat :core:buildNative --no-daemon --stacktrace
+        run: .\gradlew.bat :core:buildNative -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
+
+      # Runtime oracle: prove the just-staged native closure actually LOADS in a
+      # JVM on this OS (no model needed — calls llb_version). A build-only green
+      # check does not catch a wrong ggml backend / missing dep / bad import.
+      - name: Native load smoke (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew :core:test --tests '*NativeLoadSmoke*' -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
+
+      - name: Native load smoke (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :core:test --tests "*NativeLoadSmoke*" -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
 
       - name: Show staged natives
         shell: bash
@@ -97,34 +138,13 @@ jobs:
           echo "Contents of $dir:"
           ls -la "$dir" || echo "(missing — buildNative did not stage this platform)"
 
-      - name: Build jlink image (Unix)
+      # --- LIBRARY artifact (the natives) — captured BEFORE the CLI jlink/npm
+      # steps so a CLI-packaging failure on a platform never loses the natives
+      # the library publish needs (the Windows jlink leg hit exactly this). ---
+      # `zip` isn't on the Windows runner's bash, so zip per-OS into the same
+      # layout (a <native_key>/ dir inside the archive).
+      - name: Zip native libs (Unix)
         if: runner.os != 'Windows'
-        run: ./gradlew :cli:jlink --no-daemon --stacktrace
-
-      - name: Build jlink image (Windows)
-        if: runner.os == 'Windows'
-        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
-
-      - name: Stage jlink image into platform npm package
-        shell: bash
-        run: |
-          set -eu
-          plat="cli/npm/platforms/${{ matrix.platkey }}"
-          rm -rf "$plat/image"
-          mkdir -p "$plat/image"
-          cp -R cli/build/image/. "$plat/image/"
-          echo "Image staged into $plat/image:"
-          ls -la "$plat/image/bin" || true
-
-      - name: Pack platform npm package
-        shell: bash
-        run: |
-          set -eu
-          cd "cli/npm/platforms/${{ matrix.platkey }}"
-          npm pack
-          ls -la ./*.tgz
-
-      - name: Zip native libs
         shell: bash
         run: |
           set -eu
@@ -137,13 +157,18 @@ jobs:
           fi
           ls -la dist-natives || true
 
-      - name: Upload platform npm tarball
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-${{ matrix.platkey }}
-          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
-          if-no-files-found: warn
-          retention-days: 30
+      - name: Zip native libs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $src = "core/src/main/resources/native/${{ matrix.native_key }}"
+          New-Item -ItemType Directory -Force -Path dist-natives | Out-Null
+          if (Test-Path $src) {
+            Compress-Archive -Path $src -DestinationPath "dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" -Force
+          } else {
+            Write-Host "No natives dir for ${{ matrix.native_key }} — skipping zip."
+          }
+          Get-ChildItem dist-natives
 
       - name: Upload natives zip
         uses: actions/upload-artifact@v4
@@ -153,9 +178,56 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      # --- CLI image + npm tarball (best-effort; failure here must not fail the
+      # native/library artifact above). ---
+      - name: Build jlink image (Unix)
+        if: runner.os != 'Windows'
+        continue-on-error: true
+        run: ./gradlew :cli:jlink --no-daemon --stacktrace
+
+      - name: Build jlink image (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
+
+      - name: Stage jlink image into platform npm package
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          plat="cli/npm/platforms/${{ matrix.platkey }}"
+          [ -d "$plat" ] || { echo "no npm platform dir $plat — skipping"; exit 0; }
+          rm -rf "$plat/image"
+          mkdir -p "$plat/image"
+          cp -R cli/build/image/. "$plat/image/"
+          ls -la "$plat/image/bin" || true
+
+      - name: Pack platform npm package
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          plat="cli/npm/platforms/${{ matrix.platkey }}"
+          [ -d "$plat" ] || { echo "no npm platform dir $plat — skipping"; exit 0; }
+          cd "$plat"
+          npm pack
+          ls -la ./*.tgz
+
+      - name: Upload platform npm tarball
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.platkey }}
+          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
+          if-no-files-found: warn
+          retention-days: 30
+
   release:
-    name: assemble + publish GitHub Release
+    name: assemble release assets
     needs: build
+    # Run even if an experimental/failed leg dropped out — assemble from
+    # whatever artifacts the matrix did produce.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -226,7 +298,22 @@ jobs:
           echo "Release assets:"
           ls -la release-assets
 
+      # Always surface the assembled assets as a downloadable workflow artifact.
+      # This is the "just build, no push" path: a manual dispatch produces the
+      # Linux/Windows/arm64 binaries here, you `gh run download` them, combine
+      # with the locally-built darwin-x86_64, and publish from the dev machine.
+      - name: Upload combined release-assets bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets/*
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Push a GitHub Release ONLY for a real v* tag. Manual dispatches (and
+      # branch runs) just build + upload the artifact above — they never push.
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
