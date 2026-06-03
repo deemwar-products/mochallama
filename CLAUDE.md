@@ -4,7 +4,7 @@ Local LLM for the JVM. `Java → Project Panama FFM → thin C++ bridge (common_
 vendored llama.cpp (tag b9371) → GGUF`. No JNI. Spring-first. **Tool-calling-only.**
 
 Repo: https://github.com/deemwar-products/mochallama · Maven group `tools.deemwar` ·
-Java pkg `tools.deemwar.mochallama` · npm scope `@deemwarhq` · gh user `deemwario`.
+Java pkg `tools.deemwar.mochallama` · npm scope `@deemwario` · gh user `deemwario`.
 Live status snapshot is always `inprogress.md` (treat it as the source of truth; the
 `docs/specs/03-decisions.md` + `04-deferred.md` journals are partly stale — they still
 list streaming/tool-calling as "deferred" but both shipped).
@@ -68,7 +68,7 @@ see "Publish state" below.
 4. **Maven Central not set up** (human-gated) — Central Portal account claiming
    `io.github.deemwario` (GitHub-verified) + GPG key → `CENTRAL_PORTAL_USERNAME/TOKEN`,
    `SIGNING_KEY/PASSWORD`; switch group `tools.deemwar` → `io.github.deemwario`.
-5. **npm `@deemwarhq` org publish rights** (human-gated) — `npm login` + org access.
+5. **npm `@deemwario` org publish rights** (human-gated) — `npm login` + org access.
 6. **10 open dependabot PRs** — some major/risky (Spring Boot 4.0.6, jakarta 3,
    download-artifact 8). Triage, don't auto-merge.
 
@@ -96,5 +96,5 @@ mochallama descends from two now-archived ancestors in `../archive/`:
   initial commit, worktree, Jlama comparison.
 - `local-llama-workspace` root `d80678c5` (May 28 17:10, **1888 ln**) — THE main build:
   5-module split, FFM bridge, streaming, real tokens, tool-calling-only, HF-by-id, CLI+web UI,
-  **rebrand muthuishere → deemwar-products / @deemwarhq**, v0.1.0 tag, ended with `inprogress.md`.
+  **rebrand muthuishere → deemwar-products / @deemwario**, v0.1.0 tag, ended with `inprogress.md`.
   (Lives under the ROOT slug, not the mochallama slug, because cwd was the workspace root.)

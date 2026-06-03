@@ -13,7 +13,7 @@ dance**:
 1. **Plain Java app** — add `tools.deemwar:mochallama-core`, call `MochallamaClient`.
 2. **Spring Boot app** — add `mochallama-spring-boot-starter` → an
    OpenAI-compatible `/v1/chat/completions` (+ SSE) and `/v1/models` autoconfigure.
-3. **CLI / instant chat** — `npx @deemwarhq/mochallama chat`.
+3. **CLI / instant chat** — `npx @deemwario/mochallama chat`.
 
 Plus a demo app + web UI and live docs. The product is the **published
 library set (core + starter + spring-ai + cli)** — the `app` module is a demo,
@@ -96,7 +96,7 @@ Release (pending):
       native artifacts on a clean run. ← validating this session.
 - [ ] Complete multi-platform `core` jar assembled locally and published.
 - [ ] Maven Central: namespace + GPG + creds (human-gated — see PUBLISHING.md).
-- [ ] npm: `@deemwarhq` org login (human-gated — see PUBLISHING.md).
+- [ ] npm: `@deemwario` org login (human-gated — see PUBLISHING.md).
 
 ## Native packaging — OS-specific classifier jars (LANDED 2026-06-02)
 

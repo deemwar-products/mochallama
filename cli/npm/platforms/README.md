@@ -1,21 +1,21 @@
 # mochallama per-platform npm packages
 
 These are the four platform-specific companion packages for
-`@deemwarhq/mochallama`. Each one bundles a self-contained `jlink` runtime
+`@deemwario/mochallama`. Each one bundles a self-contained `jlink` runtime
 image (a trimmed JRE + the native llama.cpp libraries for that platform) under
 its `image/` directory and is published to npm as
-`@deemwarhq/mochallama-<platkey>`:
+`@deemwario/mochallama-<platkey>`:
 
 | dir            | npm name                            | os      | cpu    | native key       |
 |----------------|-------------------------------------|---------|--------|------------------|
-| `darwin-x64`   | `@deemwarhq/mochallama-darwin-x64`  | darwin  | x64    | `darwin-x86_64`  |
-| `darwin-arm64` | `@deemwarhq/mochallama-darwin-arm64`| darwin  | arm64  | `darwin-aarch64` |
-| `linux-x64`    | `@deemwarhq/mochallama-linux-x64`   | linux   | x64    | `linux-x86_64`   |
-| `win32-x64`    | `@deemwarhq/mochallama-win32-x64`   | win32   | x64    | `windows-x86_64` |
+| `darwin-x64`   | `@deemwario/mochallama-darwin-x64`  | darwin  | x64    | `darwin-x86_64`  |
+| `darwin-arm64` | `@deemwario/mochallama-darwin-arm64`| darwin  | arm64  | `darwin-aarch64` |
+| `linux-x64`    | `@deemwario/mochallama-linux-x64`   | linux   | x64    | `linux-x86_64`   |
+| `win32-x64`    | `@deemwario/mochallama-win32-x64`   | win32   | x64    | `windows-x86_64` |
 
 ## How they're used
 
-The main `@deemwarhq/mochallama` package lists all four as
+The main `@deemwario/mochallama` package lists all four as
 `optionalDependencies`. Thanks to each package's `os`/`cpu` fields, `npm`
 installs **only** the one matching the host — the rest are skipped. At runtime
 `bin/mochallama.js` (in the main package) resolves the matching package via

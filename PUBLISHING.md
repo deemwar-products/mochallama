@@ -43,8 +43,8 @@ task publish:local
 ### Build the npm tarballs (Mac platform) — verified
 ```bash
 task cli:npm:pack
-# -> cli/npm/deemwarhq-mochallama-0.1.0.tgz                       (launcher)
-#    cli/npm/platforms/darwin-x64/deemwarhq-mochallama-darwin-x64-0.1.0.tgz  (jlink image)
+# -> cli/npm/deemwario-mochallama-0.1.0.tgz                       (launcher)
+#    cli/npm/platforms/darwin-x64/deemwario-mochallama-darwin-x64-0.1.0.tgz  (jlink image)
 ```
 
 ---
@@ -70,13 +70,13 @@ task publish:local           # core jar now bundles darwin-x86_64 + -aarch64 + l
 
 ---
 
-## Tier 2 — npm publish  ⚠️ needs `npm login` (@deemwarhq)
+## Tier 2 — npm publish  ⚠️ needs `npm login` (@deemwario)
 
 ```bash
-npm login                    # HUMAN: log in with @deemwarhq org publish rights
+npm login                    # HUMAN: log in with @deemwario org publish rights
 task cli:npm:publish         # publishes the darwin-x64 platform pkg + the main launcher (public)
 ```
-After this, `npx @deemwarhq/mochallama chat` works on macOS Intel. The other
+After this, `npx @deemwario/mochallama chat` works on macOS Intel. The other
 platforms' packages (`linux-x64`, `darwin-arm64`, `win32-x64`) are published
 from their CI `npm-*` tarballs — download them via `gh run download <id> -n npm-linux-x64`
 and `npm publish <tgz> --access public` each, then they resolve as

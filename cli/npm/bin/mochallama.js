@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Cross-platform launcher (esbuild-style). The main @deemwarhq/mochallama
+// Cross-platform launcher (esbuild-style). The main @deemwario/mochallama
 // package carries NO native payload — instead it declares the four
 // per-platform packages as optionalDependencies. npm installs only the one
 // matching the host os/cpu (the others are skipped by their os/cpu fields).
@@ -9,7 +9,7 @@
 // At runtime we resolve that platform package, find its bundled jlink runtime
 // image launcher, and spawn it — forwarding argv, stdio and the exit code.
 //
-// Bare invocation (`npx @deemwarhq/mochallama` with no args) drops straight
+// Bare invocation (`npx @deemwario/mochallama` with no args) drops straight
 // into `chat` so users can start talking to a model immediately. Explicit
 // subcommands (models, chat, --help, --model ...) pass through untouched.
 
@@ -43,7 +43,7 @@ if (!key) {
   );
 }
 
-const pkgName = `@deemwarhq/mochallama-${key}`;
+const pkgName = `@deemwario/mochallama-${key}`;
 
 // Resolve the platform package's package.json so we can locate its image dir.
 // createRequire(__filename) ensures resolution happens relative to THIS file's
@@ -57,7 +57,7 @@ try {
     `platform package ${pkgName} is not installed.\n` +
       'It should have been pulled in automatically as an optional dependency.\n' +
       "If you used --no-optional or --omit=optional, reinstall without it, e.g.:\n" +
-      `  npm i -g @deemwarhq/mochallama`
+      `  npm i -g @deemwario/mochallama`
   );
 }
 
@@ -77,7 +77,7 @@ if (!fs.existsSync(launcher)) {
   );
 }
 
-// Default to `chat` when invoked with no args so `npx @deemwarhq/mochallama`
+// Default to `chat` when invoked with no args so `npx @deemwario/mochallama`
 // starts a chat session immediately. Any explicit arg (models, chat, --help,
 // --model, etc.) is forwarded verbatim.
 const forwarded = process.argv.slice(2);
