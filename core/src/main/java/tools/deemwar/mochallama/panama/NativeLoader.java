@@ -100,16 +100,30 @@ public final class NativeLoader {
                 String libExt = dylibExtension();
                 String libPrefix = libPrefix();
                 Path bridge = null;
+                // Pre-load the dependency chain in order. We skip any stem that
+                // isn't bundled rather than failing hard: which ggml backends
+                // ship varies by platform/build (e.g. ggml-blas is macOS-only;
+                // ggml-rpc isn't always present). Loading the present libs by
+                // absolute path before the bridge is what makes Windows resolve
+                // its imports (no rpath there); on macOS/Linux @loader_path /
+                // $ORIGIN would also resolve them. If a genuinely required lib
+                // is absent, the bridge's own System.load below fails loudly
+                // with an UnsatisfiedLinkError naming the missing symbol/lib.
                 for (String stem : LOAD_ORDER) {
                     Path lib = tmp.resolve(libPrefix + stem + libExt);
                     if (!Files.isRegularFile(lib)) {
-                        throw new IllegalStateException(
-                                "Missing required native library: " + lib);
+                        continue;
                     }
                     System.load(lib.toAbsolutePath().toString());
                     if (stem.equals("llamabridge")) {
                         bridge = lib;
                     }
+                }
+                if (bridge == null) {
+                    throw new IllegalStateException(
+                            "Missing required native library: "
+                                    + libPrefix + "llamabridge" + libExt
+                                    + " (staged: " + staged + ")");
                 }
 
                 bridgePath = bridge;

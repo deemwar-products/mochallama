@@ -68,6 +68,12 @@ else()
     set(LLAMA_BUILD_UI        OFF CACHE BOOL "" FORCE)
     set(LLAMA_BUILD_HTML      OFF CACHE BOOL "" FORCE)
     set(LLAMA_OPENSSL         OFF CACHE BOOL "" FORCE)
+    # Single ggml-cpu for the host arch (NOT the split runtime-dispatch variants
+    # that the prebuilt release packages ship) — keeps the runtime closure simple
+    # and matches NativeLoader's load order. No OpenMP so Windows doesn't pull a
+    # vcomp/libomp runtime dependency into the staged set.
+    set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
+    set(GGML_NATIVE          OFF CACHE BOOL "" FORCE)
     set(GGML_METAL            OFF CACHE BOOL "" FORCE)
     set(GGML_CUDA             OFF CACHE BOOL "" FORCE)
     set(GGML_VULKAN           OFF CACHE BOOL "" FORCE)
