@@ -63,21 +63,24 @@ a small `NativeLoader`.
   `--add-modules=jdk.incubator.vector` (kept for the in-tree Vector-API
   pure-Java sample, `Llama3.java`).
 - Framework: Spring Boot 3.3.1, single web app, no DB.
-- Native: built from vendored `src/main/native/llama.cpp` via CMake, driven
-  by a custom Gradle `buildNative` task.
-- Platform support today: macOS Intel `x86_64`, CPU-only (Accelerate / BLAS).
-  Metal/CUDA/Vulkan are gated off in `CMakeLists.txt`; flipping them on is
-  a build-flag change.
+- Native: `:core:buildNative` **downloads llama.cpp's official prebuilt
+  binaries** for the host platform and compiles only the thin bridge (no
+  llama.cpp compile). `-Pnative=source` builds from source as a fallback.
+  See `03-decisions.md` §12.
+- Platform support: **macOS Intel + Apple Silicon, Linux x86-64 + ARM64,
+  Windows x86-64** — CPU-only, generic baseline. Each ships as a per-platform
+  native classifier jar (`mochallama-core:<ver>:natives-<os>-<arch>`); a
+  `mochallama-core-platform` aggregator pulls all. GPU backends are a build flag.
 - Default model: `qwen2.5-1.5b-instruct-q4_k_m.gguf` (downloaded on first
   startup into `~/.chatbot_models`). Tool-capable; see `models.md`.
 - Streaming (SSE), tool calling, real token usage and the Spring AI adapter
-  have shipped — see `streaming-and-tools.md`. Linux/Windows binaries remain
-  deferred — see `04-deferred.md`.
+  have shipped — see `streaming-and-tools.md`. Published to Maven Central
+  (`io.github.deemwario`) + npm (`@deemwario`) — see `05-release-and-publish.md`.
 
 ## Naming
 
-The Gradle project is named **mochallama** (`rootProject.name = 'mochallama'`,
-group `tools.deemwar`) and the Java package is `tools.deemwar.mochallama`.
-The on-disk repo directory is still `llamavector-java` (left as-is; the rename to
-mochallama was applied to packages, classes, and Gradle identifiers only — see
-decision log in `03-decisions.md`).
+The Gradle project is named **mochallama** (`rootProject.name = 'mochallama'`).
+The **Maven group is `io.github.deemwario`** (GitHub-verified Central namespace);
+the npm scope is `@deemwario`. The Java package stays `tools.deemwar.mochallama`
+(package ≠ Maven group). The GitHub repo is `deemwar-products/mochallama`. See the
+decision log in `03-decisions.md` and `05-release-and-publish.md`.

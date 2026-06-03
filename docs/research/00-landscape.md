@@ -14,7 +14,7 @@ authoritative source.
 | **Llama3.java** (mukel) | Pure Java (Vector API), single file | n/a — pure Java | No (download / jbang) | No | No | Yes (`--stream`) | MIT | 2026-04-24 |
 | **Utilitron/LlamaFFM** | Panama FFM (direct llama.h binding) | No — user supplies `libllama` via env / library path | No (build & install locally) | Via separate `LlamaFFM-SpringAI` adapter (not on Central) | (unverified) | (unverified) | MIT | 2026-05-08 |
 | **nixiesearch/llamacpp-server-java** | Process-spawn the `llama-server` HTTP binary | Yes (CPU x86_64/arm64, CUDA12 x86_64) | Yes (`ai.nixiesearch:llamacpp-server-java:0.0.4-b5604`) | No (just spawns the server) | Inherits from llama-server HTTP API | Inherits from llama-server HTTP API | MIT | 2025-06-08 |
-| **mochallama** (this) | Panama FFM → custom thin C bridge → vendored llama.cpp | Yes, bundled in JAR (macOS Intel `x86_64` only today) | No (planned) | Yes — first-class: async load, `/v1/chat/completions`, `/v1/models`, 503 while loading | Yes (llama.cpp `common_chat`; tool-capable models only — enforced at load) | Yes (SSE `stream: true` + Spring AI `stream()`) | MIT | 2026-05-28 |
+| **mochallama** (this) | Panama FFM → custom thin C bridge → prebuilt llama.cpp | Yes — per-platform classifier jars (macOS Intel+ARM, Linux x64+ARM64, Windows x64) | Yes (`io.github.deemwario`) | Yes — first-class: async load, `/v1/chat/completions`, `/v1/models`, 503 while loading | Yes (llama.cpp `common_chat`; tool-capable models only — enforced at load) | Yes (SSE `stream: true` + Spring AI `stream()`) | MIT | 2026-06 |
 
 ## Notes per row
 
