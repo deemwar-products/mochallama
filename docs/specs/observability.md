@@ -164,7 +164,7 @@ Prometheus support is opt-in. The starter declares
 `micrometer-registry-prometheus` as `compileOnly`, so consumers add it to light
 up the scrape endpoint:
 
-```gradle
+```groovy
 runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
 ```
 

@@ -83,7 +83,7 @@ tasks:
       - rm -rf build/central-staging build/central-bundle.zip
       - |
         keyfile="${SIGNING_KEY_FILE:-.seckey}"
-        [ -f "$keyfile" ] || { echo "signing key file '$keyfile' not found (see .env / PUBLISHING.md)"; exit 1; }
+        [ -f "$keyfile" ] || { echo "signing key file '$keyfile' not found (see .env / docs/specs/PUBLISHING.md)"; exit 1; }
         SIGNING_KEY="$(cat "$keyfile")" SIGNING_PASSWORD="${SIGNING_PASSWORD:-}" \
           ./gradlew publishAllPublicationsToCentralStagingRepository
       - |
@@ -96,7 +96,7 @@ tasks:
       - 'echo "Signatures in bundle: $(unzip -l build/central-bundle.zip | grep -c ''\.asc$'') (must be > 0)"'
 
   publish:central:
-    desc: 'Publish to Maven Central (Central Portal). Reads CENTRAL_USERNAME/PASSWORD + signing from .env. Builds the signed bundle then uploads (USER_MANAGED — you click Publish on the Portal). See PUBLISHING.md.'
+    desc: 'Publish to Maven Central (Central Portal). Reads CENTRAL_USERNAME/PASSWORD + signing from .env. Builds the signed bundle then uploads (USER_MANAGED — you click Publish on the Portal). See docs/specs/PUBLISHING.md.'
     dotenv: ['.env']
     deps: [publish:central:bundle]
     cmds:

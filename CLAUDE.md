@@ -5,7 +5,7 @@ vendored llama.cpp (tag b9371) → GGUF`. No JNI. Spring-first. **Tool-calling-o
 
 Repo: https://github.com/deemwar-products/mochallama · Maven group `tools.deemwar` ·
 Java pkg `tools.deemwar.mochallama` · npm scope `@deemwario` · gh user `deemwario`.
-Live status snapshot is always `inprogress.md` (treat it as the source of truth; the
+Live status snapshot is always `docs/specs/inprogress.md` (treat it as the source of truth; the
 `docs/specs/03-decisions.md` + `04-deferred.md` journals are partly stale — they still
 list streaming/tool-calling as "deferred" but both shipped).
 
@@ -96,5 +96,5 @@ mochallama descends from two now-archived ancestors in `../archive/`:
   initial commit, worktree, Jlama comparison.
 - `local-llama-workspace` root `d80678c5` (May 28 17:10, **1888 ln**) — THE main build:
   5-module split, FFM bridge, streaming, real tokens, tool-calling-only, HF-by-id, CLI+web UI,
-  **rebrand muthuishere → deemwar-products / @deemwario**, v0.1.0 tag, ended with `inprogress.md`.
+  **rebrand muthuishere → deemwar-products / @deemwario**, v0.1.0 tag, ended with `docs/specs/inprogress.md`.
   (Lives under the ROOT slug, not the mochallama slug, because cwd was the workspace root.)

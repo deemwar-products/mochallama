@@ -77,3 +77,6 @@ cli/npm/platforms/*/image/*
 
 # npm auth (references token env var)
 .npmrc
+
+# direnv per-folder env (pulls deemwario gh token from keyring)
+.envrc

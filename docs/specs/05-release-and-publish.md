@@ -117,7 +117,7 @@ locally and publish only their own platform's native jar.
   `…-natives-darwin-x86_64.jar` = 12 MB; demo app loads the classifier jar and responds.
 
 **Consumer usage:**
-```gradle
+```groovy
 implementation 'io.github.deemwario:mochallama-core:0.1.2'
 runtimeOnly    'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64'  // your platform
 ```
@@ -132,12 +132,12 @@ runtimeOnly    'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64' 
 ### Consuming — three ways
 
 1. **Lean, explicit (recommended):** name your platform's classifier.
-   ```gradle
+   ```groovy
    implementation 'io.github.deemwario:mochallama-core:0.1.2'
    runtimeOnly    'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64'
    ```
 2. **Lean, auto-select** (only your platform, via OS detection):
-   ```gradle
+   ```groovy
    plugins { id 'com.google.osdetector' version '1.7.3' }
    def mochaNative = [
      'osx-x86_64':'natives-darwin-x86_64', 'osx-aarch_64':'natives-darwin-aarch64',

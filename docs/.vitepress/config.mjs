@@ -6,14 +6,26 @@ export default defineConfig({
   base: '/mochallama/',
   cleanUrls: true,
   lastUpdated: true,
-  srcExclude: ['**/promotion/**'],
+  // Keep internal/working docs in the repo but off the public site.
+  srcExclude: [
+    '**/promotion/**',
+    '**/research/**',
+    'specs/00-overview.md',
+    'specs/02-bridge-abi.md',
+    'specs/03-decisions.md',
+    'specs/04-deferred.md',
+    'specs/05-release-and-publish.md',
+    'specs/06-examples.md',
+    'specs/07-example-verification-report.md',
+    'specs/08-product-brief.md',
+    'specs/PUBLISHING.md',
+    'specs/HOW-TO-PUBLISH-AND-TEST.md',
+    'specs/inprogress.md',
+  ],
   themeConfig: {
     nav: [
       { text: 'Examples', link: '/examples/' },
-      { text: 'Specs',    link: '/specs/00-overview' },
-      { text: 'Models',   link: '/specs/models' },
-      { text: 'Metrics',  link: '/specs/observability' },
-      { text: 'Research', link: '/research/00-landscape' },
+      { text: 'Specs',    link: '/specs/01-architecture' },
       { text: 'GitHub',   link: 'https://github.com/deemwar-products/mochallama' },
     ],
     sidebar: {
@@ -32,26 +44,13 @@ export default defineConfig({
       ],
       '/specs/': [
         {
-          text: 'Specs',
+          text: 'Reference',
           items: [
-            { text: 'Overview',        link: '/specs/00-overview' },
-            { text: 'Architecture',    link: '/specs/01-architecture' },
-            { text: 'Bridge ABI',      link: '/specs/02-bridge-abi' },
-            { text: 'Design Decisions', link: '/specs/03-decisions' },
-            { text: 'Deferred Work',   link: '/specs/04-deferred' },
-            { text: 'Model Profiles',  link: '/specs/models' },
+            { text: 'Architecture',      link: '/specs/01-architecture' },
             { text: 'Streaming & Tools', link: '/specs/streaming-and-tools' },
-            { text: 'Metrics',         link: '/specs/observability' },
-          ],
-        },
-      ],
-      '/research/': [
-        {
-          text: 'Research',
-          items: [
-            { text: 'Landscape',       link: '/research/00-landscape' },
-            { text: 'Positioning',     link: '/research/01-positioning' },
-            { text: 'Related Reading', link: '/research/02-related-reading' },
+            { text: 'Tool Calling',      link: '/specs/tool-calling-support' },
+            { text: 'Model Profiles',    link: '/specs/models' },
+            { text: 'Metrics',           link: '/specs/observability' },
           ],
         },
       ],
@@ -60,8 +59,8 @@ export default defineConfig({
       { icon: 'github', link: 'https://github.com/deemwar-products/mochallama' },
     ],
     footer: {
-      message: 'Released under the project license.',
-      copyright: 'Copyright (c) mochallama contributors',
+      message: 'Released under the MIT License.',
+      copyright: 'Built by <a href="https://deemwar.com" target="_blank" rel="noreferrer">deemwar.com</a> · © deemwar',
     },
     search: {
       provider: 'local',

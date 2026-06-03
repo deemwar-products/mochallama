@@ -8,13 +8,10 @@ hero:
   actions:
     - theme: brand
       text: Get Started
-      link: /specs/00-overview
-    - theme: alt
-      text: Examples
       link: /examples/
     - theme: alt
-      text: Why mochallama
-      link: /research/01-positioning
+      text: Architecture
+      link: /specs/01-architecture
     - theme: alt
       text: GitHub
       link: https://github.com/deemwar-products/mochallama
@@ -59,14 +56,9 @@ For streaming, tool calling, the OpenAI Python SDK, the Spring Boot starter and
 the CLI, see the [Examples](/examples/). For the inference meters and health
 indicator, see [Metrics](/specs/observability).
 
-## See the design journal
+## Learn more
 
-Everything about how the bridge works, why the C ABI looks the way it does, what's
-deferred, and the trade-offs taken along the way lives in the [specs](/specs/00-overview).
-Start with [Overview](/specs/00-overview), then [Architecture](/specs/01-architecture),
-then the [Bridge ABI](/specs/02-bridge-abi) and the running
-[Design Decisions](/specs/03-decisions) journal.
-
-For the wider picture — how mochallama compares to the rest of the
-JVM-meets-llama.cpp ecosystem — read [Landscape](/research/00-landscape) and
-[Positioning](/research/01-positioning).
+How the stack fits together — Java → Panama FFM → the thin C++ bridge →
+llama.cpp — is in [Architecture](/specs/01-architecture). For the model lineup
+and how to switch GGUFs see [Model Profiles](/specs/models), and for the
+Actuator meters and health indicator see [Metrics](/specs/observability).
