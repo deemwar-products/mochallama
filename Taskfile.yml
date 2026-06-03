@@ -66,7 +66,8 @@ tasks:
         [ -n "$RID" ] || { echo "No successful release run found. Trigger one: gh workflow run release.yml"; exit 1; }
         echo "Downloading natives from release run $RID ..."
         rm -rf dist/ci && mkdir -p dist/ci
-        gh run download "$RID" -R {{.REPO}} -D dist/ci
+        # ONLY the natives-* artifacts (downloading everything collides on the npm tarballs).
+        gh run download "$RID" -R {{.REPO}} -D dist/ci -p 'natives-*'
         # Stage each natives-*.zip alongside the locally-built darwin-x86_64 libs.
         shopt -s nullglob
         for z in dist/ci/natives-*/*.zip dist/ci/release-assets/mochallama-natives-*.zip; do
