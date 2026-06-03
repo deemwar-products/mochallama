@@ -143,14 +143,18 @@ tasks:
       - 'echo "Inspect with: tar tzf {{.PLAT_DIR}}/*.tgz | head"'
 
   cli:npm:publish:
-    desc: 'PUBLISHES PUBLICLY to npm the darwin-x64 platform pkg + the main launcher. Other platforms publish from CI (release.yml). Builds + packs first.'
+    desc: 'PUBLISH ALL @deemwario/mochallama* packages to npm: 5 platform pkgs + launcher. darwin-x64 packed locally; linux-x64/linux-arm64/darwin-arm64/win32-x64 from a release.yml run. Auth via NPM_DEEMWAR_IO_PUBLISH_TOKEN (.env) or `npm login`. RUN_ID=<id> optional.'
+    dotenv: ['.env']
+    cmds:
+      - 'echo "Publishing ALL @deemwario/mochallama* packages PUBLICLY (5 platforms + launcher). Ctrl-C within 5s to abort."'
+      - sleep 5
+      - bash scripts/publish-npm.sh
+
+  cli:npm:publish:darwin-x64:
+    desc: 'Publish ONLY the darwin-x64 platform pkg + launcher locally (quick path; other platforms unpublished). Builds + packs first.'
     deps:
       - cli:npm:pack
     cmds:
-      - 'echo "WARNING: this publishes @deemwario/mochallama-darwin-x64 AND @deemwario/mochallama PUBLICLY to the npm registry."'
-      - 'echo "The other platform packages are published by the release workflow. Ctrl-C within 5s to abort."'
-      - sleep 5
-      # Platform package first — the main launcher's optionalDependency must exist.
       - cd {{.NPM_DIR}}/platforms/darwin-x64 && npm publish --access public
       - cd {{.NPM_DIR}} && npm publish --access public
 

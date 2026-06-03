@@ -74,3 +74,6 @@ cli/npm/platforms/*/image/*
 # Local secrets (Maven Central tokens) — never commit
 .env
 .env.local
+
+# npm auth (references token env var)
+.npmrc
