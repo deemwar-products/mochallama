@@ -30,9 +30,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  LLAMA_CPP_TAG: b9371
-
 jobs:
   build:
     name: natives (${{ matrix.native_key }})
@@ -72,13 +69,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: core/src/main/resources/native/${{ matrix.native_key }}
-          key: natives-${{ matrix.native_key }}-${{ env.LLAMA_CPP_TAG }}-${{ hashFiles('core/src/main/cpp/**') }}
+          key: natives-${{ matrix.native_key }}-b9371-${{ hashFiles('core/src/main/cpp/**') }}
 
-      - name: Clone vendored llama.cpp (pinned ${{ env.LLAMA_CPP_TAG }})
+      - name: Clone vendored llama.cpp (pinned b9371)
         if: steps.cache-natives.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          git clone --depth 1 -b "$LLAMA_CPP_TAG" https://github.com/ggml-org/llama.cpp \
+          git clone --depth 1 -b b9371 https://github.com/ggml-org/llama.cpp \
             core/src/main/native/llama.cpp
 
       - name: Build native libs (Unix)
@@ -127,7 +124,7 @@ jobs:
           retention-days: 90
 
   store:
-    name: store -> natives-${{ env.LLAMA_CPP_TAG }} release
+    name: store -> natives-b9371 release
     needs: build
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -154,11 +151,11 @@ jobs:
       - name: Publish to the natives release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: natives-${{ env.LLAMA_CPP_TAG }}
-          name: Native binaries (llama.cpp ${{ env.LLAMA_CPP_TAG }})
+          tag_name: natives-b9371
+          name: Native binaries (llama.cpp b9371)
           prerelease: true
           body: >
             Prebuilt mochallama native closures (llamabridge + llama.cpp
-            ${{ env.LLAMA_CPP_TAG }}) per platform. Consumed by release.yml.
+            b9371) per platform. Consumed by release.yml.
             Rebuilt only when the bridge or the pinned llama.cpp tag changes.
           files: natives/*.zip
