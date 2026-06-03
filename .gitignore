@@ -70,3 +70,7 @@ cli/npm/platforms/*/image/*
 !cli/npm/bin/
 !cli/npm/bin/**
 .seckey
+
+# Local secrets (Maven Central tokens) — never commit
+.env
+.env.local
