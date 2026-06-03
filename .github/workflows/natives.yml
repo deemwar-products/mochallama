@@ -1,0 +1,164 @@
+# Tier 1 — build the NATIVE DEPENDENCIES (rare).
+#
+# The native closure (our llamabridge + llama.cpp `b9371`) almost never changes:
+# only when core/src/main/cpp/** or the pinned llama.cpp tag moves. So it is built
+# HERE, on its own cadence, and stored in a durable `natives-b9371` GitHub Release.
+# The frequent `release.yml` (Tier 2) just DOWNLOADS these — it never compiles.
+#
+# darwin-x86_64 (Intel mac, macos-13) is `experimental`: GitHub's Intel runners are
+# scarce and may sit queued forever. If this leg doesn't run, seed that one platform
+# from a local Intel mac:
+#   task native            # builds core/src/main/resources/native/darwin-x86_64
+#   ( cd core/src/main/resources/native && zip -r /tmp/mochallama-natives-darwin-x86_64.zip darwin-x86_64 )
+#   gh release upload natives-b9371 /tmp/mochallama-natives-darwin-x86_64.zip --clobber
+# The store job below only ADDS/overwrites the platforms it built — it never deletes
+# a locally-seeded asset.
+
+name: natives
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'core/src/main/cpp/**'
+      - '.github/workflows/natives.yml'
+
+concurrency:
+  group: natives-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  LLAMA_CPP_TAG: b9371
+
+jobs:
+  build:
+    name: natives (${{ matrix.native_key }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    native_key: linux-x86_64,   native_mode: source, experimental: false }
+          - { os: ubuntu-24.04-arm, native_key: linux-aarch64,  native_mode: source, experimental: false }
+          - { os: macos-14,         native_key: darwin-aarch64, native_mode: source, experimental: false }
+          - { os: macos-13,         native_key: darwin-x86_64,  native_mode: source, experimental: true  }
+          - { os: windows-latest,   native_key: windows-x86_64, native_mode: source, experimental: true  }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 22
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Set up MSVC (Windows only)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # On a cache hit the staged bridge satisfies buildNative's upToDateWhen guard
+      # and the ~95m source compile is skipped entirely.
+      - name: Cache staged natives
+        id: cache-natives
+        uses: actions/cache@v4
+        with:
+          path: core/src/main/resources/native/${{ matrix.native_key }}
+          key: natives-${{ matrix.native_key }}-${{ env.LLAMA_CPP_TAG }}-${{ hashFiles('core/src/main/cpp/**') }}
+
+      - name: Clone vendored llama.cpp (pinned ${{ env.LLAMA_CPP_TAG }})
+        if: steps.cache-natives.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          git clone --depth 1 -b "$LLAMA_CPP_TAG" https://github.com/ggml-org/llama.cpp \
+            core/src/main/native/llama.cpp
+
+      - name: Build native libs (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew :core:buildNative -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
+
+      - name: Build native libs (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :core:buildNative -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
+
+      # Runtime oracle: prove the staged closure actually LOADS in a JVM (calls
+      # llb_version — no model). A green compile does not catch a bad ggml backend.
+      - name: Native load smoke (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew :core:test --tests '*NativeLoadSmoke*' -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
+
+      - name: Native load smoke (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :core:test --tests "*NativeLoadSmoke*" -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
+
+      - name: Zip natives (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -eu
+          src="core/src/main/resources/native/${{ matrix.native_key }}"
+          mkdir -p dist-natives
+          ( cd "$src/.." && zip -r "$GITHUB_WORKSPACE/dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" "${{ matrix.native_key }}" )
+          ls -la dist-natives
+
+      - name: Zip natives (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $src = "core/src/main/resources/native/${{ matrix.native_key }}"
+          New-Item -ItemType Directory -Force -Path dist-natives | Out-Null
+          Compress-Archive -Path $src -DestinationPath "dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" -Force
+          Get-ChildItem dist-natives
+
+      - name: Upload natives artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: natives-${{ matrix.native_key }}
+          path: dist-natives/*.zip
+          if-no-files-found: warn
+          retention-days: 90
+
+  store:
+    name: store -> natives-${{ env.LLAMA_CPP_TAG }} release
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all natives artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: natives-*
+          path: artifacts
+
+      - name: Collect zips
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p natives
+          shopt -s nullglob
+          for z in artifacts/natives-*/*.zip; do cp "$z" natives/; done
+          echo "Collected:"; ls -la natives
+
+      # Append/overwrite ONLY the platforms we built — never delete other assets,
+      # so a locally-seeded darwin-x86_64 survives runs that didn't build it.
+      - name: Publish to the natives release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: natives-${{ env.LLAMA_CPP_TAG }}
+          name: Native binaries (llama.cpp ${{ env.LLAMA_CPP_TAG }})
+          prerelease: true
+          body: >
+            Prebuilt mochallama native closures (llamabridge + llama.cpp
+            ${{ env.LLAMA_CPP_TAG }}) per platform. Consumed by release.yml.
+            Rebuilt only when the bridge or the pinned llama.cpp tag changes.
+          files: natives/*.zip

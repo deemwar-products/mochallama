@@ -1,6 +1,6 @@
 {
   "name": "@deemwario/mochallama",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Run a local llama.cpp LLM from the terminal \u2014 JVM-powered (Project Panama FFM), shipped as self-contained jlink runtime images. Cross-platform via per-platform optional dependencies.",
   "bin": {
     "mochallama": "bin/mochallama.js"
@@ -34,10 +34,10 @@
   },
   "//platform-note": "This package carries NO native payload. The jlink runtime image (trimmed JRE + llama.cpp natives) lives in the per-platform optionalDependencies below \u2014 npm installs only the one matching the host os/cpu; bin/mochallama.js resolves it at runtime. Keep these versions pinned in lockstep with this package's version.",
   "optionalDependencies": {
-    "@deemwario/mochallama-darwin-x64": "0.1.2",
-    "@deemwario/mochallama-darwin-arm64": "0.1.2",
-    "@deemwario/mochallama-linux-x64": "0.1.2",
-    "@deemwario/mochallama-linux-arm64": "0.1.2",
-    "@deemwario/mochallama-win32-x64": "0.1.2"
+    "@deemwario/mochallama-darwin-x64": "0.1.3",
+    "@deemwario/mochallama-darwin-arm64": "0.1.3",
+    "@deemwario/mochallama-linux-x64": "0.1.3",
+    "@deemwario/mochallama-linux-arm64": "0.1.3",
+    "@deemwario/mochallama-win32-x64": "0.1.3"
   }
 }

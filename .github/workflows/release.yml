@@ -1,19 +1,20 @@
-# Release: tag-driven cross-platform build -> GitHub Release.
+# Tier 2 — build + publish a mochallama RELEASE (frequent, every version bump).
 #
-# On a v* tag (or manual dispatch) a matrix builds, per platform:
-#   - that platform's native llama.cpp + bridge libs (via :core:buildNative,
-#     which now stages into src/main/resources/native/<host-key>/ — see
-#     core/build.gradle)
-#   - that platform's jlink runtime image (:cli:jlink)
-#   - the per-platform npm package tarball (image copied into
-#     cli/npm/platforms/<platkey>/image, then `npm pack`)
-#   - a zip of the platform's native libs
+# This NEVER compiles native code. It downloads the prebuilt per-platform native
+# closures from the durable `natives-b9371` release (produced by natives.yml) and
+# stages them, which satisfies buildNative's upToDateWhen guard — so the jars and
+# jlink images are just packaged, not compiled.
 #
-# A final `release` job downloads every artifact, packs the main npm launcher,
-# and attaches everything to the GitHub Release.
-#
-# TODO: code signing / notarization / Maven Central / npm publish are out of
-# scope here — this builds and attaches release assets only.
+#   publish-maven : THE LIBRARY. One Linux runner. Stages all 5 platforms' natives
+#                   into core resources -> classifier jars -> signed Central bundle.
+#                   Fully decoupled from any Mac/Windows runner.
+#   build-cli     : per-platform jlink image + npm tarball, for the 4 platforms with
+#                   reliable runners. darwin-x64 (Intel mac, scarce macos-13) is NOT
+#                   here — it is built + published LOCALLY (see Taskfile cli:npm:*).
+#   publish-npm   : OIDC trusted publish of the 4 CI platform packages (no token).
+#                   The launcher is published LOCALLY, LAST, after darwin-x64, so all
+#                   five optionalDependencies resolve.
+#   release       : attach npm tarballs + natives + app fat jar to the GitHub Release.
 
 name: release
 
@@ -24,379 +25,42 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
+env:
+  NATIVES_RELEASE: natives-b9371
+
 jobs:
-  build:
-    name: build (${{ matrix.native_key }})
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
-    # Hard cap so a flaky runner can never hang the release for 24h again
-    # (the macos-13 Intel leg did exactly that). The slowest leg is a clean
-    # macos-14 arm64 llama.cpp build (~95m), so 150m is generous headroom.
-    timeout-minutes: 150
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux: build from SOURCE. The prebuilt linux release ships a SPLIT
-          # ggml-cpu (15 arch dylibs, runtime-dispatched) + no single ggml-cpu —
-          # incompatible with NativeLoader. A source build yields one ggml-cpu.
-          - os: ubuntu-latest
-            native_key: linux-x86_64
-            platkey: linux-x64
-            native_mode: source
-            experimental: false
-          # Linux ARM64 (AWS Graviton, cloud ARM, Raspberry Pi) — free GitHub
-          # ARM runner, source build (same single-ggml-cpu reason as x86_64).
-          - os: ubuntu-24.04-arm
-            native_key: linux-aarch64
-            platkey: linux-arm64
-            native_mode: source
-            experimental: false
-          # darwin-aarch64 (Apple Silicon / M1): SOURCE — the macOS arm64 prebuilt
-          # libggml hard-links @rpath/libggml-metal (Metal GPU backend) which we
-          # don't bundle, so it fails to load. A CPU-only source build avoids it.
-          - os: macos-14
-            native_key: darwin-aarch64
-            platkey: darwin-arm64
-            native_mode: source
-            experimental: false
-          # darwin-x86_64 (Intel mac): SOURCE on macos-13 (last Intel runner). The
-          # old 24h hang was the UNBOUNDED parallel compile — capped now (-PnativeJobs),
-          # so it builds fine. Included so CI produces ALL 5 npm packages for OIDC
-          # publishing (no local Intel-mac step needed).
-          - os: macos-13
-            native_key: darwin-x86_64
-            platkey: darwin-x64
-            native_mode: source
-            experimental: false
-          # Windows: build from SOURCE too (same split-ggml-cpu reason as Linux,
-          # plus the prebuilt zip ships no import .lib for MSVC linking). Still
-          # experimental until the native smoke passes here.
-          - os: windows-latest
-            native_key: windows-x86_64
-            platkey: win32-x64
-            native_mode: source
-            experimental: true
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 22
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '22'
-
-      - name: Set up CMake
-        uses: lukka/get-cmake@latest
-
-      - name: Set up MSVC (Windows only)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      # Cache the staged native libs keyed on the llama.cpp tag + our C bridge
-      # sources. On a hit, buildNative's outputs.upToDateWhen guard fires and
-      # the ~95m CMake/llama.cpp compile is skipped entirely — repeat releases
-      # for an unchanged bridge are then near-instant.
-      - name: Cache staged natives
-        id: cache-natives
-        uses: actions/cache@v4
-        with:
-          path: core/src/main/resources/native/${{ matrix.native_key }}
-          key: natives-${{ matrix.native_key }}-b9371-${{ hashFiles('core/src/main/cpp/**') }}
-
-      - name: Clone vendored llama.cpp (pinned tag b9371)
-        if: steps.cache-natives.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp \
-            core/src/main/native/llama.cpp
-
-      - name: Build native libs (Unix)
-        if: runner.os != 'Windows'
-        run: ./gradlew :core:buildNative -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
-
-      - name: Build native libs (Windows)
-        if: runner.os == 'Windows'
-        run: .\gradlew.bat :core:buildNative -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
-
-      # Runtime oracle: prove the just-staged native closure actually LOADS in a
-      # JVM on this OS (no model needed — calls llb_version). A build-only green
-      # check does not catch a wrong ggml backend / missing dep / bad import.
-      - name: Native load smoke (Unix)
-        if: runner.os != 'Windows'
-        run: ./gradlew :core:test --tests '*NativeLoadSmoke*' -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
-
-      - name: Native load smoke (Windows)
-        if: runner.os == 'Windows'
-        run: .\gradlew.bat :core:test --tests "*NativeLoadSmoke*" -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
-
-      - name: Show staged natives
-        shell: bash
-        run: |
-          dir="core/src/main/resources/native/${{ matrix.native_key }}"
-          echo "Contents of $dir:"
-          ls -la "$dir" || echo "(missing — buildNative did not stage this platform)"
-
-      # --- LIBRARY artifact (the natives) — captured BEFORE the CLI jlink/npm
-      # steps so a CLI-packaging failure on a platform never loses the natives
-      # the library publish needs (the Windows jlink leg hit exactly this). ---
-      # `zip` isn't on the Windows runner's bash, so zip per-OS into the same
-      # layout (a <native_key>/ dir inside the archive).
-      - name: Zip native libs (Unix)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set -eu
-          src="core/src/main/resources/native/${{ matrix.native_key }}"
-          mkdir -p dist-natives
-          if [ -d "$src" ]; then
-            ( cd "$src/.." && zip -r "$GITHUB_WORKSPACE/dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" "${{ matrix.native_key }}" )
-          else
-            echo "No natives dir for ${{ matrix.native_key }} — skipping zip."
-          fi
-          ls -la dist-natives || true
-
-      - name: Zip native libs (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $src = "core/src/main/resources/native/${{ matrix.native_key }}"
-          New-Item -ItemType Directory -Force -Path dist-natives | Out-Null
-          if (Test-Path $src) {
-            Compress-Archive -Path $src -DestinationPath "dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" -Force
-          } else {
-            Write-Host "No natives dir for ${{ matrix.native_key }} — skipping zip."
-          }
-          Get-ChildItem dist-natives
-
-      - name: Upload natives zip
-        uses: actions/upload-artifact@v4
-        with:
-          name: natives-${{ matrix.native_key }}
-          path: dist-natives/*.zip
-          if-no-files-found: warn
-          retention-days: 30
-
-      # --- CLI image + npm tarball (best-effort; failure here must not fail the
-      # native/library artifact above). ---
-      # Pass the SAME -Pnative mode so jlink's transitive :core:buildNative stays
-      # up-to-date (a different mode changes the task input and re-runs it — which
-      # on Windows re-tried the prebuilt path that has no import .lib and failed).
-      - name: Build jlink image (Unix)
-        if: runner.os != 'Windows'
-        continue-on-error: true
-        run: ./gradlew :cli:jlink -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
-
-      - name: Build jlink image (Windows)
-        if: runner.os == 'Windows'
-        continue-on-error: true
-        run: .\gradlew.bat :cli:jlink -Pnative=${{ matrix.native_mode }} --no-daemon --stacktrace
-
-      - name: Stage jlink image into platform npm package
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -eu
-          plat="cli/npm/platforms/${{ matrix.platkey }}"
-          [ -d "$plat" ] || { echo "no npm platform dir $plat — skipping"; exit 0; }
-          rm -rf "$plat/image"
-          mkdir -p "$plat/image"
-          cp -R cli/build/image/. "$plat/image/"
-          ls -la "$plat/image/bin" || true
-
-      - name: Pack platform npm package
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -eu
-          plat="cli/npm/platforms/${{ matrix.platkey }}"
-          [ -d "$plat" ] || { echo "no npm platform dir $plat — skipping"; exit 0; }
-          cd "$plat"
-          npm pack
-          ls -la ./*.tgz
-
-      - name: Upload platform npm tarball
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-${{ matrix.platkey }}
-          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
-          if-no-files-found: warn
-          retention-days: 30
-
-  release:
-    name: assemble release assets
-    needs: build
-    # Run even if an experimental/failed leg dropped out — assemble from
-    # whatever artifacts the matrix did produce.
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 22
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '22'
-
-      - name: Set up CMake
-        uses: lukka/get-cmake@latest
-
-      - name: Clone vendored llama.cpp (pinned tag b9371)
-        shell: bash
-        run: |
-          git clone --depth 1 -b b9371 https://github.com/ggerganov/llama.cpp \
-            core/src/main/native/llama.cpp
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Pack main npm launcher
-        shell: bash
-        run: |
-          set -eu
-          cd cli/npm
-          npm pack
-          ls -la ./*.tgz
-
-      - name: Stage all natives into resources (for the fat JAR)
-        shell: bash
-        run: |
-          set -eu
-          mkdir -p core/src/main/resources/native
-          shopt -s nullglob
-          for z in artifacts/natives-*/*.zip; do
-            echo "Unzipping $z"
-            unzip -o "$z" -d core/src/main/resources/native/
-          done
-          echo "Staged native layout:"
-          find core/src/main/resources/native -maxdepth 2 -type d | sort
-
-      - name: Assemble app fat JAR (best-effort)
-        id: fatjar
-        continue-on-error: true
-        run: ./gradlew :app:bootJar --no-daemon --stacktrace
-
-      - name: Collect release assets
-        shell: bash
-        run: |
-          set -eu
-          mkdir -p release-assets
-          shopt -s nullglob
-          # Per-platform npm tarballs.
-          for t in artifacts/npm-*/*.tgz; do cp "$t" release-assets/; done
-          # Main npm launcher tarball.
-          for t in cli/npm/*.tgz; do cp "$t" release-assets/; done
-          # Natives zips.
-          for z in artifacts/natives-*/*.zip; do cp "$z" release-assets/; done
-          # Fat JAR, if it built.
-          for j in app/build/libs/*.jar; do cp "$j" release-assets/ 2>/dev/null || true; done
-          echo "Release assets:"
-          ls -la release-assets
-
-      # Always surface the assembled assets as a downloadable workflow artifact.
-      # This is the "just build, no push" path: a manual dispatch produces the
-      # Linux/Windows/arm64 binaries here, you `gh run download` them, combine
-      # with the locally-built darwin-x86_64, and publish from the dev machine.
-      - name: Upload combined release-assets bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-assets
-          path: release-assets/*
-          if-no-files-found: warn
-          retention-days: 30
-
-      # Push a GitHub Release ONLY for a real v* tag. Manual dispatches (and
-      # branch runs) just build + upload the artifact above — they never push.
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: |
-            release-assets/*
-
   # --------------------------------------------------------------------------
-  # Publish npm — all 5 platform packages + launcher — via OIDC TRUSTED
-  # PUBLISHING (no token: npm trusts this workflow; needs a Trusted Publisher
-  # configured per package on npmjs.com + id-token:write here). Tag-only.
-  # --------------------------------------------------------------------------
-  publish-npm:
-    name: publish npm (OIDC)
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org'
-      - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
-        run: npm install -g npm@latest
-      - name: Download platform npm tarballs (all 5 from the build legs)
-        uses: actions/download-artifact@v4
-        with:
-          pattern: npm-*
-          path: dist/npm
-      - name: Publish platform packages (OIDC, no token)
-        run: |
-          set -e
-          for t in dist/npm/npm-*/*.tgz; do echo "publish $t"; npm publish "$t" --access public; done
-      - name: Pack + publish the launcher LAST (its optionalDeps must exist)
-        run: |
-          set -e
-          cd cli/npm && npm pack && npm publish ./*.tgz --access public
-
-  # --------------------------------------------------------------------------
-  # Publish Maven Central — core (+5 native classifier jars) + -platform +
-  # starter + spring-ai — signed, via the Central Portal API (AUTOMATIC). Uses
-  # repo secrets: CENTRAL_USERNAME, CENTRAL_PASSWORD, SIGNING_KEY, SIGNING_PASSWORD.
-  # Tag-only.
+  # THE LIBRARY — Maven Central. Pure CI, one Linux runner, no native compile.
   # --------------------------------------------------------------------------
   publish-maven:
     name: publish Maven Central
-    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '22'
-      - name: Download all platform natives
-        uses: actions/download-artifact@v4
-        with:
-          pattern: natives-*
-          path: dist/natives
-      - name: Stage every platform's natives into core resources
-        shell: bash
+
+      - name: Download prebuilt natives (all platforms)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          mkdir -p core/src/main/resources/native
-          shopt -s nullglob
-          for z in dist/natives/natives-*/*.zip; do echo "stage $z"; unzip -o "$z" -d core/src/main/resources/native/ >/dev/null; done
-          ls -1 core/src/main/resources/native/
+          mkdir -p dist/natives core/src/main/resources/native
+          gh release download "$NATIVES_RELEASE" -R "$GITHUB_REPOSITORY" -p '*.zip' -D dist/natives
+          for z in dist/natives/*.zip; do echo "stage $z"; unzip -o "$z" -d core/src/main/resources/native/ >/dev/null; done
+          echo "Staged platforms:"; ls -1 core/src/main/resources/native/
+
       - name: Publish to staging, bundle, upload to Central (AUTOMATIC)
         env:
           SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
@@ -409,15 +73,169 @@ jobs:
           VER=$(grep -oE "version = '[0-9][^']*'" build.gradle | grep -oE '[0-9][^'\'']*')
           # Idempotent: skip if this version is already on Maven Central.
           if curl -sfo /dev/null "https://repo1.maven.org/maven2/io/github/deemwario/mochallama-core/${VER}/mochallama-core-${VER}.pom"; then
-            echo "Maven Central already has ${VER} — skipping Maven publish."; exit 0
+            echo "Maven Central already has ${VER} — skipping."; exit 0
           fi
-          # buildNative finds the host (linux) bridge already staged from the
-          # artifact, so it stays up-to-date and does not recompile.
+          # buildNative is up-to-date (bridge already staged) so nothing compiles.
           ./gradlew publishAllPublicationsToCentralStagingRepository --no-daemon --stacktrace
           ( cd build/central-staging && zip -qr ../central-bundle.zip . -x '*.DS_Store' -x '*maven-metadata*' )
           echo "signatures: $(unzip -l build/central-bundle.zip | grep -c '\.asc$')"
-          VER=$(grep -oE "version = '[0-9][^']*'" build.gradle | grep -oE '[0-9][^'\'']*')
           TOKEN=$(printf '%s' "$CENTRAL_USERNAME:$CENTRAL_PASSWORD" | base64)
           curl -sS --fail-with-body -X POST -H "Authorization: Bearer $TOKEN" \
             -F bundle=@build/central-bundle.zip \
             "https://central.sonatype.com/api/v1/publisher/upload?name=mochallama-${VER}&publishingType=AUTOMATIC"
+
+  # --------------------------------------------------------------------------
+  # CLI jlink images + npm tarballs — the 4 platforms with reliable runners.
+  # darwin-x64 is built + published LOCALLY (no Intel-mac CI runner).
+  # --------------------------------------------------------------------------
+  build-cli:
+    name: cli (${{ matrix.platkey }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    native_key: linux-x86_64,   platkey: linux-x64,    experimental: false }
+          - { os: ubuntu-24.04-arm, native_key: linux-aarch64,  platkey: linux-arm64,  experimental: false }
+          - { os: macos-14,         native_key: darwin-aarch64, platkey: darwin-arm64, experimental: false }
+          - { os: windows-latest,   native_key: windows-x86_64, platkey: win32-x64,    experimental: true  }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+      - name: Set up CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Download this platform's prebuilt natives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p dl core/src/main/resources/native
+          gh release download "$NATIVES_RELEASE" -R "$GITHUB_REPOSITORY" \
+            -p "mochallama-natives-${{ matrix.native_key }}.zip" -D dl
+          unzip -o dl/*.zip -d core/src/main/resources/native/ >/dev/null
+          ls -1 "core/src/main/resources/native/${{ matrix.native_key }}"
+
+      - name: Build jlink image (Unix)
+        if: runner.os != 'Windows'
+        run: ./gradlew :cli:jlink --no-daemon --stacktrace
+
+      - name: Build jlink image (Windows)
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
+
+      - name: Stage jlink image into platform npm package
+        shell: bash
+        run: |
+          set -eu
+          plat="cli/npm/platforms/${{ matrix.platkey }}"
+          rm -rf "$plat/image"; mkdir -p "$plat/image"
+          cp -R cli/build/image/. "$plat/image/"
+          ls -la "$plat/image/bin" || true
+
+      - name: Pack platform npm package
+        shell: bash
+        run: |
+          set -eu
+          cd "cli/npm/platforms/${{ matrix.platkey }}"
+          npm pack
+          ls -la ./*.tgz
+
+      - name: Upload platform npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.platkey }}
+          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
+          if-no-files-found: warn
+          retention-days: 30
+
+  # --------------------------------------------------------------------------
+  # Publish the 4 CI platform npm packages via OIDC trusted publishing (no token).
+  # darwin-x64 + the launcher are published LOCALLY (task cli:npm:publish).
+  # --------------------------------------------------------------------------
+  publish-npm:
+    name: publish npm (OIDC)
+    needs: build-cli
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Download platform npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          path: dist/npm
+      - name: Publish platform packages (OIDC, no token)
+        run: |
+          set -e
+          for t in dist/npm/npm-*/*.tgz; do echo "publish $t"; npm publish "$t" --access public; done
+
+  # --------------------------------------------------------------------------
+  # Attach build outputs to the GitHub Release (tag-only).
+  # --------------------------------------------------------------------------
+  release:
+    name: assemble release assets
+    needs: [build-cli]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+
+      - name: Download prebuilt natives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p dist/natives core/src/main/resources/native
+          gh release download "$NATIVES_RELEASE" -R "$GITHUB_REPOSITORY" -p '*.zip' -D dist/natives
+          for z in dist/natives/*.zip; do unzip -o "$z" -d core/src/main/resources/native/ >/dev/null; done
+
+      - name: Download platform npm tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          path: artifacts
+
+      - name: Assemble app fat JAR (best-effort)
+        continue-on-error: true
+        run: ./gradlew :app:bootJar --no-daemon --stacktrace
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p release-assets
+          shopt -s nullglob
+          for t in artifacts/npm-*/*.tgz; do cp "$t" release-assets/; done
+          for z in dist/natives/*.zip; do cp "$z" release-assets/; done
+          for j in app/build/libs/*.jar; do cp "$j" release-assets/ 2>/dev/null || true; done
+          echo "Release assets:"; ls -la release-assets
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release-assets/*
