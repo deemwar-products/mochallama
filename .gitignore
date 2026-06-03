@@ -69,3 +69,4 @@ cli/npm/platforms/*/image/*
 # from the package).
 !cli/npm/bin/
 !cli/npm/bin/**
+.seckey

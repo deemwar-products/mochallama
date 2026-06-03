@@ -75,12 +75,35 @@ tasks:
       - 'echo "Staged native platforms (this should now list darwin-x86_64 + the CI platforms):"'
       - ls -1 core/src/main/resources/native/
 
-  publish:central:
-    desc: '[STUB — needs creds] Publish core/starter/spring-ai to Maven Central. Wire signing + central plugin and set creds first — see PUBLISHING.md.'
+  publish:central:bundle:
+    desc: 'Build the signed Central Portal bundle (build/central-bundle.zip). Needs SIGNING_KEY + SIGNING_PASSWORD env. Run `task release:download` first for all-platform natives.'
     cmds:
-      - 'echo "Maven Central publish is credential-gated. See PUBLISHING.md for the one-time setup"'
-      - 'echo "(Central Portal namespace io.github.deemwar-products + GPG key + env creds), then this task runs the real publish."'
-      - exit 1
+      - rm -rf build/central-staging build/central-bundle.zip
+      - ./gradlew publishAllPublicationsToCentralStagingRepository
+      - |
+        cd build/central-staging
+        # Central Portal wants a zip of the maven-repo layout (group path at the
+        # root). Exclude maven-metadata.xml (Central generates its own) and junk.
+        rm -f ../../build/central-bundle.zip
+        zip -qr ../central-bundle.zip . -x '*.DS_Store' -x '*maven-metadata*'
+      - 'echo "Bundle: build/central-bundle.zip"'
+      - 'unzip -l build/central-bundle.zip | grep -E "\\.jar$|\\.pom$|\\.asc$" | head'
+
+  publish:central:
+    desc: 'Publish to Maven Central (Central Portal). Needs SIGNING_KEY, SIGNING_PASSWORD, CENTRAL_USERNAME, CENTRAL_PASSWORD env. Builds the signed bundle then uploads (USER_MANAGED — you click Publish on the Portal). See PUBLISHING.md.'
+    deps: [publish:central:bundle]
+    cmds:
+      - |
+        : "${CENTRAL_USERNAME:?set CENTRAL_USERNAME (Central Portal token user)}"
+        : "${CENTRAL_PASSWORD:?set CENTRAL_PASSWORD (Central Portal token password)}"
+        TOKEN=$(printf '%s' "$CENTRAL_USERNAME:$CENTRAL_PASSWORD" | base64)
+        echo "Uploading build/central-bundle.zip to Central Portal ..."
+        curl -sS --fail-with-body -X POST \
+          -H "Authorization: Bearer $TOKEN" \
+          -F bundle=@build/central-bundle.zip \
+          "https://central.sonatype.com/api/v1/publisher/upload?name=mochallama-0.1.0&publishingType=USER_MANAGED"
+        echo ""
+        echo "Uploaded. Review + click Publish at https://central.sonatype.com/publishing/deployments"
 
   cli:image:
     desc: Build the self-contained jlink runtime image for the CLI (cli/build/image/bin/mochallama).
