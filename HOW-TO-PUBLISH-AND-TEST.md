@@ -85,6 +85,33 @@ git tag v0.1.0 && git push origin v0.1.0   # release.yml attaches all platform a
 
 ---
 
+## How consumers use it (OS-specific classifier jars)
+
+The library now ships Java-only core + per-platform native jars (not a 40MB fat jar):
+```gradle
+dependencies {
+  implementation 'io.github.deemwar-products:mochallama-core:0.1.0'        // Java, ~40KB
+  runtimeOnly    'io.github.deemwar-products:mochallama-core:0.1.0:natives-linux-x86_64'  // their platform
+}
+```
+Platforms shipped: `natives-darwin-x86_64`, `natives-darwin-aarch64`,
+`natives-linux-x86_64`, `natives-linux-aarch64` (ARM/Graviton), `natives-windows-x86_64`.
+
+## Custom build (someone builds their own platform's native)
+```bash
+git clone https://github.com/deemwar-products/mochallama && cd mochallama
+export JAVA_HOME=<jdk-22>
+./gradlew :core:buildNative            # builds + stages THEIR host platform's natives
+./gradlew :core:publishToMavenLocal    # -> ~/.m2: Java core + natives-<their-platform>.jar
+# their app then depends on mochallama-core + natives-<their-platform> from mavenLocal
+```
+`-Pnative=source` forces a from-source build; default downloads prebuilt where clean (macOS).
+
+## Platform coverage (honest)
+- **Java: JDK 22+ required** (Panama FFM); needs `--enable-native-access=ALL-UNNAMED`.
+- **OS/arch:** macOS Intel + Apple Silicon, Linux x86-64 + **ARM64**, Windows x86-64.
+- Not yet: Windows ARM64, 32-bit, other OSes. Unsupported platforms fail fast with a clear message.
+
 ## Status when I left it (check the live state)
 
 | Item | State |

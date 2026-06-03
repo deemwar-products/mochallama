@@ -98,23 +98,34 @@ Release (pending):
 - [ ] Maven Central: namespace + GPG + creds (human-gated — see PUBLISHING.md).
 - [ ] npm: `@deemwarhq` org login (human-gated — see PUBLISHING.md).
 
-## Native packaging (jar layout)
+## Native packaging — OS-specific classifier jars (LANDED 2026-06-02)
 
-Decided 2026-06-02:
-- **v0.1.x → fat `core` jar** bundling all platforms' natives under
-  `native/<platform>/` (~40 MB with 4 platforms; ~9.6 MB per platform). Zero
-  config, works offline, one artifact. `NativeLoader` extracts only the running
-  platform's dir at runtime. Accepted: 40 MB is fine for now.
-- **v0.1.1 → split into per-platform classifier jars** (the LWJGL / JavaCPP /
-  sqlite-jdbc pattern): `mochallama-core` = Java only (~200 KB) +
-  `mochallama-core:natives-<platform>` (~10 MB each); a `-platform` aggregator
-  POM auto-selects via OS detection. This is the "shipping a real library, not a
-  school project" target — each consumer pulls ~10 MB, not 40.
-- npm/CLI is ALREADY split: the launcher declares per-platform packages as
-  `optionalDependencies`, so `npx` downloads only the matching platform image.
-- Cheap win (either layout): stop staging the redundant 3rd versioned lib name
-  (`lib*.0.0.9371.dylib`) — the loader needs only the load-name + SONAME — which
-  trims the natives ~⅓ (fat jar ~40 MB → ~25 MB).
+Not a fat jar. The `mochallama-core` jar is **Java-only (~40 KB)**; each platform's
+native libs ship as a **classifier artifact** `mochallama-core:<ver>:natives-<os>-<arch>`
+(~6–12 MB), the LWJGL / JavaCPP / sqlite-jdbc pattern. Rationale: each consumer
+pulls Java + only their platform (not ~40 MB of all five); a new platform is just
+another classifier (no fat rebuild); **custom builders** run `:core:buildNative`
+locally and publish only their own platform's native jar.
+
+- `core/build.gradle`: main `jar` excludes `native/**`; one `Jar` task per staged
+  platform → classifier artifact with entries under `native/<platform>/` (so
+  `NativeLoader`'s `classpath:/native/<platform>/` lookup resolves). Host platform
+  jar exposed via a `hostNatives` configuration the demo app consumes.
+- `NativeLoader` is unchanged in behaviour — it loads `/native/<platform>/` from
+  whichever jar provides it.
+- Verified: `mochallama-core-0.1.0.jar` = 40 KB Java-only;
+  `…-natives-darwin-x86_64.jar` = 12 MB; demo app loads the classifier jar and responds.
+
+**Consumer usage:**
+```gradle
+implementation 'io.github.deemwar-products:mochallama-core:0.1.0'
+runtimeOnly    'io.github.deemwar-products:mochallama-core:0.1.0:natives-linux-x86_64'  // your platform
+```
+(A future `-platform` aggregator POM can auto-select via `com.google.osdetector`.)
+
+- npm/CLI is already split the same way (per-platform `optionalDependencies`).
+- Cheap follow-up: drop the redundant 3rd versioned lib name
+  (`lib*.0.0.9371.dylib`) — loader needs only load-name + SONAME — trims natives ~⅓.
 
 ## Out of scope for v0.1.x
 
