@@ -10,7 +10,7 @@ in `03-decisions.md` / `04-deferred.md`.
 One published, runnable library so any developer can, with **no native install
 dance**:
 
-1. **Plain Java app** — add `tools.deemwar:mochallama-core`, call `MochallamaClient`.
+1. **Plain Java app** — add `io.github.deemwario:mochallama-core`, call `MochallamaClient`.
 2. **Spring Boot app** — add `mochallama-spring-boot-starter` → an
    OpenAI-compatible `/v1/chat/completions` (+ SSE) and `/v1/models` autoconfigure.
 3. **CLI / instant chat** — `npx @deemwario/mochallama chat`.

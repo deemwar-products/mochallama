@@ -9,18 +9,32 @@ autoconfigured `ChatModel` / `ChatClient`.
 
 ```groovy
 dependencies {
-    implementation 'tools.deemwar:mochallama-spring-boot-starter:0.1.0-SNAPSHOT'
+    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.0'
+
+    // Native llama.cpp libs ship SEPARATELY (the core jar is Java-only).
+    // Easiest — all platforms' natives, the right one loads at runtime:
+    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.0'
+    // ...OR lean: just your deploy platform's classifier (smaller), e.g.:
+    // runtimeOnly 'io.github.deemwario:mochallama-core:0.1.0:natives-linux-x86_64'
 
     // Optional — Spring AI ChatModel / ChatClient adapter.
     // Spring AI is compileOnly in the adapter, so you pin the version here.
-    implementation 'tools.deemwar:mochallama-spring-ai:0.1.0-SNAPSHOT'
+    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.0'
     implementation 'org.springframework.ai:spring-ai-client-chat:1.0.8'
 }
 ```
 
-The starter pulls in `mochallama-core` (which bundles the native llama.cpp
-dylibs). It does **not** drag in Spring AI — that stays version-resilient and
-optional.
+The starter pulls in `mochallama-core` (the Java engine). As of v0.1.0 the
+native libs are **not** in the core jar — they ship as separate per-platform
+artifacts so you download only what you need:
+
+- `mochallama-core-platform` — zero-config, bundles **all** platforms' natives
+  (Intel/Apple-Silicon macOS, x86-64/ARM64 Linux, x86-64 Windows); the matching
+  one loads at runtime. Simplest (~40 MB of natives).
+- `mochallama-core:<ver>:natives-<os>-<arch>` — lean, just your deploy platform
+  (e.g. `natives-linux-x86_64`, `natives-linux-aarch64`). ~8–12 MB.
+
+The starter does **not** drag in Spring AI — that stays version-resilient and optional.
 
 ## JVM args
 

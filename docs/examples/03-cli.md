@@ -3,18 +3,21 @@
 `@deemwario/mochallama` is a terminal CLI that runs a local llama.cpp model
 straight from the command line. It is JVM-powered (Project Panama FFM bridge,
 same `mochallama-core` engine as the Spring app) but shipped as a self-contained
-**jlink runtime image** — a trimmed JRE plus the native dylibs — so you do
-**not** need a JDK installed.
+**jlink runtime image** — a trimmed **JDK 22** plus the native libs — so you do
+**not** need Java installed.
 
-> **v0.1.0 is macOS (x64) only.** The bundled image ships the `darwin-x86_64`
-> native dylibs; `npm` refuses to install on other platforms (via the `os`/`cpu`
-> fields) rather than hand you a broken binary. Linux and Apple-silicon bundles
-> publish later.
+> **Cross-platform.** Ships per-platform packages for macOS (Intel + Apple
+> Silicon), Linux (x86-64 + ARM64), and Windows (x86-64). `npm` installs only the
+> package matching your OS/arch (via `optionalDependencies` + `os`/`cpu`), so you
+> download just your platform's image (~31 MB). The model itself downloads on
+> first run.
 
 ## Install
 
 ```bash
 npm i -g @deemwario/mochallama
+# or run without installing:
+npx @deemwario/mochallama chat
 ```
 
 ## List model profiles

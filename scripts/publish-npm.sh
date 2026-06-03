@@ -56,24 +56,41 @@ CI_TGZS=()
 while IFS= read -r t; do CI_TGZS+=("$t"); done < <(find dist/npm -name '*.tgz')
 echo "→ found ${#CI_TGZS[@]} CI platform tarballs"
 
-# Sanity: warn if a CI tarball isn't @deemwario (stale release run).
+# HARD STOP if any CI tarball isn't @deemwario (a stale, pre-rename release run).
+# Publishing those would create wrong-scoped @deemwarhq packages the launcher
+# can't resolve — exactly the bug we must not repeat.
+BAD=0
 for t in "${CI_TGZS[@]}"; do
-  tar -xzO -f "$t" package/package.json 2>/dev/null | grep -q '"@deemwario/' || \
-    echo "  ⚠ $(basename "$t") is not @deemwario-scoped — your release run predates the rename; re-run release.yml" >&2
+  tar -xzO -f "$t" package/package.json 2>/dev/null | grep -q '"@deemwario/' || {
+    echo "  ✗ $(basename "$t") is not @deemwario-scoped" >&2; BAD=1; }
 done
+if [ "$BAD" = 1 ]; then
+  echo "✗ CI tarballs predate the @deemwario rename. Re-run release.yml on current main:" >&2
+  echo "    gh workflow run release.yml --ref main && gh run watch -R $REPO" >&2
+  echo "  then re-run this. (Nothing more was published.)" >&2
+  exit 1
+fi
+
+# publish one tarball, skipping if that name@version is already on npm (idempotent re-runs).
+publish_tgz() {
+  local tgz="$1" nv
+  nv=$(tar -xzO -f "$tgz" package/package.json | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["name"]+"@"+d["version"])')
+  if npm view "$nv" version >/dev/null 2>&1; then
+    echo "  = $nv already published — skip"
+  else
+    echo "  + $nv"
+    npm publish "$tgz" --access public
+  fi
+}
 
 # 3. Publish platform packages FIRST (host + the 4 CI ones).
 echo "=== publishing platform packages ==="
-echo "  + darwin-x64 (local): $(basename "$HOST_TGZ")"
-npm publish "$HOST_TGZ" --access public
-for t in "${CI_TGZS[@]}"; do
-  echo "  + $(basename "$t")"
-  npm publish "$t" --access public
-done
+publish_tgz "$HOST_TGZ"
+for t in "${CI_TGZS[@]}"; do publish_tgz "$t"; done
 
 # 4. Publish the launcher LAST.
 echo "=== publishing launcher ==="
-npm publish "$LAUNCHER_TGZ" --access public
+publish_tgz "$LAUNCHER_TGZ"
 
 echo ""
 echo "✓ published. Verify:"
