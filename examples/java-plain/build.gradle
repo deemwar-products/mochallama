@@ -1,0 +1,11 @@
+plugins { id 'application' }
+repositories { mavenCentral() }
+java { toolchain { languageVersion = JavaLanguageVersion.of(22) } }
+dependencies {
+    implementation 'io.github.deemwario:mochallama-core:0.1.1'
+    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.1'
+}
+application {
+    mainClass = 'demo.Main'
+    applicationDefaultJvmArgs = ['--enable-native-access=ALL-UNNAMED']
+}

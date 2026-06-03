@@ -20,6 +20,10 @@ description = 'mochallama-cli: Picocli command-line chat over mochallama-core. N
 
 dependencies {
     implementation project(':core')
+    // core's jar is Java-only (natives are classifier jars). The CLI bundles a
+    // self-contained jlink image, so it MUST also carry the host platform's
+    // native libs — otherwise NativeLoader reports "(none)" at runtime.
+    runtimeOnly project(path: ':core', configuration: 'hostNatives')
     implementation 'info.picocli:picocli:4.7.7'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.7'
 }
