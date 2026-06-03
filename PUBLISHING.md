@@ -86,13 +86,13 @@ and `npm publish <tgz> --access public` each, then they resolve as
 
 ## Tier 3 — Maven Central (Central Portal)  — gradle plumbing WIRED ✅
 
-Group is `io.github.deemwar-products`; `signing` + a Central-Portal staging/bundle
+Group is `io.github.deemwario`; `signing` + a Central-Portal staging/bundle
 flow are wired (`build.gradle` + `task publish:central`). Signing only activates
 when `SIGNING_KEY` is set, so credential-free builds never break.
 
 **One-time human setup (done once):**
 1. **Central Portal account** at https://central.sonatype.com — register namespace
-   `io.github.deemwar-products` (GitHub-verified: create a public repo named after
+   `io.github.deemwario` (GitHub-verified: create a public repo named after
    the verification code under the org).
 2. **Token**: Central Portal → Account → Generate User Token → `username` + `password`.
 3. **GPG key** (RSA 4096 recommended; ed25519 may work):
