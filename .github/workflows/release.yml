@@ -51,13 +51,15 @@ jobs:
             platkey: linux-x64
             native_mode: source
             experimental: false
-          # darwin-aarch64 (Apple Silicon / M1): PREBUILT — the macOS arm64 release
-          # ships a single ggml-cpu, so it loads cleanly (proven). darwin-x86_64
-          # (Intel) is built + published LOCALLY from the dev machine.
+          # darwin-aarch64 (Apple Silicon / M1): SOURCE — the macOS arm64 prebuilt
+          # libggml hard-links @rpath/libggml-metal (Metal GPU backend) which we
+          # don't bundle, so it fails to load. A CPU-only source build avoids the
+          # Metal dependency (Metal accel is a future enhancement). darwin-x86_64
+          # (Intel) is built LOCALLY: its prebuilt has no Metal dep and loads.
           - os: macos-14
             native_key: darwin-aarch64
             platkey: darwin-arm64
-            native_mode: prebuilt
+            native_mode: source
             experimental: false
           # Windows: build from SOURCE too (same split-ggml-cpu reason as Linux,
           # plus the prebuilt zip ships no import .lib for MSVC linking). Still

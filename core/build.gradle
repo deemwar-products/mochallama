@@ -130,8 +130,14 @@ tasks.register('buildNative') {
                 "-DLLB_HEADERS_DIR=${headersDir.absolutePath}".toString()]
 
         def isLibName = { String n ->
-            // macOS: libfoo.dylib / libfoo.0.dylib ; Linux: libfoo.so / libfoo.so.0 ; Windows: foo.dll
-            n.endsWith(nativeLibExt) || n.contains("${nativeLibExt}.")
+            // Linux SONAMEs version the suffix (libfoo.so / libfoo.so.0), so the
+            // ".so." mid-name rule is needed there. macOS versions BEFORE the ext
+            // (libfoo.0.dylib) so endsWith(.dylib) already covers it. On Windows
+            // a ".dll." mid-name rule wrongly matches MSBuild's foo.dll.recipe /
+            // foo.dll.lib intermediates — which then corrupt the staged DLL — so
+            // match the exact extension only for .dylib / .dll.
+            if (nativeLibExt == '.so') return n.endsWith('.so') || n.contains('.so.')
+            n.endsWith(nativeLibExt)
         }
 
         if (nativeMode == 'prebuilt') {
