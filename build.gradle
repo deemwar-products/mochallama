@@ -2,9 +2,11 @@
 // Per-subproject plugins (Spring Boot, java-library, etc.) live in core/ and app/.
 
 allprojects {
-    // Maven Central namespace (GitHub-verified io.github.<org>). The Java package
-    // stays tools.deemwar.mochallama — package != Maven group.
-    group = 'io.github.deemwar-products'
+    // Maven Central namespace (GitHub-verified). io.github.deemwario is the
+    // verified Central Portal namespace. The Java package stays
+    // tools.deemwar.mochallama and the repo stays deemwar-products — package and
+    // SCM url need not match the Maven group.
+    group = 'io.github.deemwario'
     version = '0.1.0'
 }
 

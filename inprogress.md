@@ -23,7 +23,7 @@ Local LLM for the JVM: `Java → Project Panama FFM → custom thin C++ bridge (
 - Multi-platform code: `NativeLoader` resolves os/arch (`.dylib`/`.so`/`.dll`); esbuild-style npm packages (`@deemwarhq/mochallama` launcher + per-platform `optionalDependencies`); `npx @deemwarhq/mochallama chat` works cross-platform.
 - Cross-platform bridge `CMakeLists` (Apple: Accelerate/BLAS + `@loader_path`; Linux/Windows: plain CPU + `$ORIGIN`/none).
 - VitePress docs live on GitHub Pages: https://deemwar-products.github.io/mochallama/ (specs, models, metrics, examples).
-- Branding: Maven group `tools.deemwar` (→ `io.github.deemwar-products` planned for Central), Java package `tools.deemwar.mochallama`, npm scope `@deemwarhq`, gh `deemwario`, GitHub `deemwar-products`.
+- Branding: Maven group `tools.deemwar` (→ `io.github.deemwario` planned for Central), Java package `tools.deemwar.mochallama`, npm scope `@deemwarhq`, gh `deemwario`, GitHub `deemwar-products`.
 
 ## Release state
 - `v0.1.0` tagged + pushed (version off `-SNAPSHOT`).
@@ -65,6 +65,6 @@ local mac natives + `task release:download` (pulls CI natives) → `task publish
 ## Remaining work
 - **#24 LOCAL-PUBLISH** (pending): `task release:download` → publish cross-platform npm + Maven Central. Gated on:
   - npm: `npm login` + `@deemwarhq` org with publish rights
-  - Maven Central: Central Portal account claiming `io.github.deemwar-products` (GitHub-verified) + GPG key → env `CENTRAL_PORTAL_USERNAME/TOKEN`, `SIGNING_KEY/PASSWORD`; switch group to `io.github.deemwar-products`
+  - Maven Central: Central Portal account claiming `io.github.deemwario` (GitHub-verified) + GPG key → env `CENTRAL_PORTAL_USERNAME/TOKEN`, `SIGNING_KEY/PASSWORD`; switch group to `io.github.deemwario`
   - `task release:download` now implemented (pulls CI natives + stages them).
 - Linux CI leg (#1) + `build.yml` (#3) FIXED this session; Windows (#2) still deferred to v0.1.1.

@@ -66,8 +66,8 @@ see "Publish state" below.
 3. **`build.yml` over-triggers — FIXED.** Trimmed to a single ubuntu compile check
    (`compileJava -x buildNative`); heavy matrix now only in `release.yml`.
 4. **Maven Central not set up** (human-gated) — Central Portal account claiming
-   `io.github.deemwar-products` (GitHub-verified) + GPG key → `CENTRAL_PORTAL_USERNAME/TOKEN`,
-   `SIGNING_KEY/PASSWORD`; switch group `tools.deemwar` → `io.github.deemwar-products`.
+   `io.github.deemwario` (GitHub-verified) + GPG key → `CENTRAL_PORTAL_USERNAME/TOKEN`,
+   `SIGNING_KEY/PASSWORD`; switch group `tools.deemwar` → `io.github.deemwario`.
 5. **npm `@deemwarhq` org publish rights** (human-gated) — `npm login` + org access.
 6. **10 open dependabot PRs** — some major/risky (Spring Boot 4.0.6, jakarta 3,
    download-artifact 8). Triage, don't auto-merge.
