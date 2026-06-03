@@ -118,8 +118,8 @@ locally and publish only their own platform's native jar.
 
 **Consumer usage:**
 ```gradle
-implementation 'io.github.deemwario:mochallama-core:0.1.0'
-runtimeOnly    'io.github.deemwario:mochallama-core:0.1.0:natives-linux-x86_64'  // your platform
+implementation 'io.github.deemwario:mochallama-core:0.1.1'
+runtimeOnly    'io.github.deemwario:mochallama-core:0.1.1:natives-linux-x86_64'  // your platform
 ```
 (A future `-platform` aggregator POM can auto-select via `com.google.osdetector`.)
 
@@ -133,8 +133,8 @@ runtimeOnly    'io.github.deemwario:mochallama-core:0.1.0:natives-linux-x86_64' 
 
 1. **Lean, explicit (recommended):** name your platform's classifier.
    ```gradle
-   implementation 'io.github.deemwario:mochallama-core:0.1.0'
-   runtimeOnly    'io.github.deemwario:mochallama-core:0.1.0:natives-linux-x86_64'
+   implementation 'io.github.deemwario:mochallama-core:0.1.1'
+   runtimeOnly    'io.github.deemwario:mochallama-core:0.1.1:natives-linux-x86_64'
    ```
 2. **Lean, auto-select** (only your platform, via OS detection):
    ```gradle
@@ -145,15 +145,15 @@ runtimeOnly    'io.github.deemwario:mochallama-core:0.1.0:natives-linux-x86_64' 
      'windows-x86_64':'natives-windows-x86_64',
    ][osdetector.classifier]
    dependencies {
-     implementation 'io.github.deemwario:mochallama-core:0.1.0'
-     runtimeOnly "io.github.deemwario:mochallama-core:0.1.0:${mochaNative}"
+     implementation 'io.github.deemwario:mochallama-core:0.1.1'
+     runtimeOnly "io.github.deemwario:mochallama-core:0.1.1:${mochaNative}"
    }
    ```
    (Maven: the same via `os-maven-plugin`'s `${os.detected.classifier}` + a profile map.)
    The osdetector classifier (`osx-`, `aarch_64`) differs from ours (`darwin-`,
    `aarch64`), hence the small map.
 3. **Zero-config, all platforms:** depend on the aggregator
-   `io.github.deemwario:mochallama-core-platform:0.1.0` — pulls Java +
+   `io.github.deemwario:mochallama-core-platform:0.1.1` — pulls Java +
    every platform's native jar (bigger; works anywhere without naming a classifier).
 
 ## Out of scope for v0.1.x
