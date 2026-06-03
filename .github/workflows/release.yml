@@ -141,7 +141,10 @@ jobs:
       # --- LIBRARY artifact (the natives) — captured BEFORE the CLI jlink/npm
       # steps so a CLI-packaging failure on a platform never loses the natives
       # the library publish needs (the Windows jlink leg hit exactly this). ---
-      - name: Zip native libs
+      # `zip` isn't on the Windows runner's bash, so zip per-OS into the same
+      # layout (a <native_key>/ dir inside the archive).
+      - name: Zip native libs (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -eu
@@ -153,6 +156,19 @@ jobs:
             echo "No natives dir for ${{ matrix.native_key }} — skipping zip."
           fi
           ls -la dist-natives || true
+
+      - name: Zip native libs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $src = "core/src/main/resources/native/${{ matrix.native_key }}"
+          New-Item -ItemType Directory -Force -Path dist-natives | Out-Null
+          if (Test-Path $src) {
+            Compress-Archive -Path $src -DestinationPath "dist-natives/mochallama-natives-${{ matrix.native_key }}.zip" -Force
+          } else {
+            Write-Host "No natives dir for ${{ matrix.native_key }} — skipping zip."
+          }
+          Get-ChildItem dist-natives
 
       - name: Upload natives zip
         uses: actions/upload-artifact@v4
