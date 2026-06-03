@@ -336,6 +336,12 @@ publishing {
                 description = 'Aggregator: mochallama-core + all platform native jars (zero-config, all platforms).'
                 url = 'https://github.com/deemwar-products/mochallama'
                 licenses { license { name = 'MIT License'; url = 'https://opensource.org/licenses/MIT' } }
+                developers { developer { id = 'deemwario'; name = 'deemwar'; email = 'io@deemwar.com' } }
+                scm {
+                    connection = 'scm:git:https://github.com/deemwar-products/mochallama.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/deemwar-products/mochallama.git'
+                    url = 'https://github.com/deemwar-products/mochallama'
+                }
                 withXml {
                     def deps = asNode().appendNode('dependencies')
                     def addDep = { String classifier ->

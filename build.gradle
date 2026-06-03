@@ -2,7 +2,9 @@
 // Per-subproject plugins (Spring Boot, java-library, etc.) live in core/ and app/.
 
 allprojects {
-    group = 'tools.deemwar'
+    // Maven Central namespace (GitHub-verified io.github.<org>). The Java package
+    // stays tools.deemwar.mochallama — package != Maven group.
+    group = 'io.github.deemwar-products'
     version = '0.1.0'
 }
 
@@ -34,6 +36,43 @@ subprojects {
             events 'passed', 'skipped', 'failed'
             exceptionFormat 'full'
             showStandardStreams true
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Maven Central (Central Portal) publishing — signing + a shared local staging
+// repo we zip into an upload bundle. Applies only to the publishable modules
+// (core / starter / spring-ai — the ones with maven-publish). Signing activates
+// ONLY when SIGNING_KEY is present, so credential-free builds + publishToMavenLocal
+// are never affected. See `task publish:central` + PUBLISHING.md.
+// ---------------------------------------------------------------------
+subprojects {
+    pluginManager.withPlugin('maven-publish') {
+        apply plugin: 'signing'
+
+        publishing {
+            repositories {
+                // file:// staging dir (shared across modules), NOT a server.
+                maven {
+                    name = 'centralStaging'
+                    url = rootProject.layout.buildDirectory.dir('central-staging')
+                }
+            }
+        }
+
+        def signingKey = System.getenv('SIGNING_KEY') ?: findProperty('signingKey')?.toString()
+        def signingPassword = System.getenv('SIGNING_PASSWORD') ?: findProperty('signingPassword')?.toString() ?: ''
+        signing {
+            required = { signingKey != null && gradle.taskGraph.allTasks.any { it.name.contains('CentralStaging') } }
+            if (signingKey) {
+                useInMemoryPgpKeys(signingKey, signingPassword)
+            }
+        }
+        afterEvaluate {
+            if (signingKey) {
+                signing { sign publishing.publications }
+            }
         }
     }
 }

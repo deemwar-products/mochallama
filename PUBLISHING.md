@@ -84,29 +84,41 @@ and `npm publish <tgz> --access public` each, then they resolve as
 
 ---
 
-## Tier 3 — Maven Central  ⚠️ needs Central Portal account + GPG (one-time)
+## Tier 3 — Maven Central (Central Portal)  — gradle plumbing WIRED ✅
 
-This is the only part not auto-wired (so a credential-free build never breaks).
-One-time human setup:
+Group is `io.github.deemwar-products`; `signing` + a Central-Portal staging/bundle
+flow are wired (`build.gradle` + `task publish:central`). Signing only activates
+when `SIGNING_KEY` is set, so credential-free builds never break.
 
-1. **Central Portal account** at https://central.sonatype.com — claim namespace
-   `io.github.deemwar-products` (GitHub-verified: it asks you to create a repo
-   named after a verification code under the org).
-2. **GPG signing key**: `gpg --gen-key`; publish it:
-   `gpg --keyserver keys.openpgp.org --send-keys <KEYID>`.
-3. **Switch the Maven group** `tools.deemwar` → `io.github.deemwar-products`
-   in the three `*/build.gradle` publication blocks (or via a `-Pgroup=` toggle
-   once wired).
-4. **Wire the gradle plumbing** (not yet added — see `docs/specs/05-release-and-publish.md`):
-   add the `signing` plugin + `central-publishing` (or `nmcp`) plugin to
-   core/starter/spring-ai, guarded so it only activates when these env vars exist:
+**One-time human setup (done once):**
+1. **Central Portal account** at https://central.sonatype.com — register namespace
+   `io.github.deemwar-products` (GitHub-verified: create a public repo named after
+   the verification code under the org).
+2. **Token**: Central Portal → Account → Generate User Token → `username` + `password`.
+3. **GPG key** (RSA 4096 recommended; ed25519 may work):
    ```bash
-   export CENTRAL_PORTAL_USERNAME=...   CENTRAL_PORTAL_TOKEN=...
-   export SIGNING_KEY="$(gpg --export-secret-keys --armor <KEYID>)"  SIGNING_PASSWORD=...
+   gpg --full-generate-key
+   gpg --keyserver keyserver.ubuntu.com --send-keys <FINGERPRINT>
+   gpg --export-secret-keys --armor <FINGERPRINT> > .seckey   # gitignored
    ```
-5. Then: `task release:download` (Tier 1, for the full jar) → `task publish:central`.
 
-Until Tier 3 is wired, consumers use `~/.m2` (Tier 0/1) or JitPack off the tag.
+**Each publish:**
+```bash
+task release:download                       # stage ALL 5 platforms' natives (else core ships only your platform)
+export SIGNING_KEY="$(cat .seckey)"         # armored secret key
+export SIGNING_PASSWORD='<key passphrase>'  # empty string if the key has none
+export CENTRAL_USERNAME='<portal token user>'
+export CENTRAL_PASSWORD='<portal token password>'
+
+task publish:central        # builds the SIGNED bundle, uploads to the Portal (USER_MANAGED)
+# -> then review + click Publish at https://central.sonatype.com/publishing/deployments
+```
+`task publish:central:bundle` builds just the signed `build/central-bundle.zip`
+(inspect before uploading). Appears on search.maven.org ~30 min after you click Publish.
+
+Notes: version is `0.1.0` (bump in root `build.gradle` to re-publish). The `core`
+jar's classifier natives only cover platforms staged at publish time — always run
+`task release:download` first. Consumers without Central can still use `~/.m2` (Tier 0/1).
 
 ---
 
