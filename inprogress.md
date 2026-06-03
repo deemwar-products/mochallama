@@ -49,7 +49,9 @@ See PUBLISHING.md for the publish runbook and docs/specs/05-release-and-publish.
    darwin-aarch64 CI leg ~60s vs the old 95m). See `docs/specs/03-decisions.md` §12,
    `core/build.gradle`. `-Pnative=source` fallback still caps parallelism. Verified
    on Intel + CI darwin-aarch64; full CI on branch `ci/fix-tier1-workflows` (PR #11).
-2. **Windows leg fails** — bridge `CMakeLists` not wired for MSVC; `continue-on-error` so it doesn't block others. Deferred (v0.1.1).
+2. **Windows — RESOLVED (2026-06-02).** Source build + bridge symbol export
+   (`WINDOWS_EXPORT_ALL_SYMBOLS`) + per-OS zip (PowerShell). Native load smoke
+   passes on windows-x86_64. (CLI jlink image on Windows still best-effort.)
 3. **`build.yml` over-triggers — FIXED.** Trimmed to a single ubuntu-only compile
    check (`compileJava -x buildNative`) on push/PR; the heavy cross-platform matrix
    now lives only in `release.yml`. (It was also stale — used pre-module paths.)

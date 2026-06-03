@@ -120,8 +120,9 @@ export JAVA_HOME=<jdk-22>
 | App responds: non-stream / stream / tool | ✅ verified |
 | Web UI, CLI `models` | ✅ verified |
 | `task publish:local`, `task cli:npm:pack` | ✅ verified |
-| CI prebuilt build (linux + darwin-aarch64) | check PR #11 / `gh run list` — was building when I left |
-| `build.yml` light PR check | check PR #11 |
+| CI multi-platform build + **load smoke** (linux x64 + ARM64, macOS arm64, windows x64) | ✅ all green (run 26862489610) |
+| OS-specific classifier jars (Java core + per-platform native jars) | ✅ verified (app responds) |
+| `build.yml` light PR check | ✅ pass |
 | npm publish | ⏸ needs `npm login` |
 | Maven Central | ⏸ needs Portal account + GPG (PUBLISHING.md §Tier 3) |
 
