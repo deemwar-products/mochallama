@@ -3,9 +3,9 @@
 A standalone Spring Boot app that consumes the published **mochallama 0.1.1** artifacts
 from Maven Central (no local build required).
 
-- `io.github.deemwario:mochallama-spring-boot-starter:0.1.1` — auto-configures the
+- `io.github.deemwario:mochallama-spring-boot-starter:0.1.2` — auto-configures the
   OpenAI-compatible chat endpoint (`/v1/chat/completions`).
-- `io.github.deemwario:mochallama-core-platform:0.1.1` — pulls in the native
+- `io.github.deemwario:mochallama-core-platform:0.1.2` — pulls in the native
   llama.cpp binaries for your platform at runtime.
 
 The model is downloaded on first run from the URL in `application.properties` and

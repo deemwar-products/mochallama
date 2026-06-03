@@ -9,17 +9,17 @@ autoconfigured `ChatModel` / `ChatClient`.
 
 ```groovy
 dependencies {
-    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.1'
+    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.2'
 
     // Native llama.cpp libs ship SEPARATELY (the core jar is Java-only).
     // Easiest — all platforms' natives, the right one loads at runtime:
-    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.1'
+    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.2'
     // ...OR lean: just your deploy platform's classifier (smaller), e.g.:
-    // runtimeOnly 'io.github.deemwario:mochallama-core:0.1.1:natives-linux-x86_64'
+    // runtimeOnly 'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64'
 
     // Optional — Spring AI ChatModel / ChatClient adapter.
     // Spring AI is compileOnly in the adapter, so you pin the version here.
-    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.1'
+    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.2'
     implementation 'org.springframework.ai:spring-ai-client-chat:1.0.8'
 }
 ```
