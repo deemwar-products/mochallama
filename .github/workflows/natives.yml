@@ -149,7 +149,7 @@ jobs:
       # Append/overwrite ONLY the platforms we built — never delete other assets,
       # so a locally-seeded darwin-x86_64 survives runs that didn't build it.
       - name: Publish to the natives release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: natives-b9371
           name: Native binaries (llama.cpp b9371)
