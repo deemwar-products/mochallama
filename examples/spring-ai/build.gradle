@@ -1,0 +1,18 @@
+plugins {
+    id 'org.springframework.boot' version '3.3.1'
+    id 'io.spring.dependency-management' version '1.1.5'
+    id 'application'
+}
+repositories { mavenCentral() }
+java { toolchain { languageVersion = JavaLanguageVersion.of(22) } }
+ext { springAiVersion = '1.0.8' }
+dependencyManagement { imports { mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}" } }
+dependencies {
+    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.1'
+    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.1'
+    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.1'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.ai:spring-ai-client-chat'
+}
+application { mainClass = 'demo.App' }
+bootRun { jvmArgs = ['--enable-native-access=ALL-UNNAMED', '--add-modules=jdk.incubator.vector'] }
