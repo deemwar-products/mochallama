@@ -60,12 +60,19 @@ jobs:
             experimental: false
           # darwin-aarch64 (Apple Silicon / M1): SOURCE — the macOS arm64 prebuilt
           # libggml hard-links @rpath/libggml-metal (Metal GPU backend) which we
-          # don't bundle, so it fails to load. A CPU-only source build avoids the
-          # Metal dependency (Metal accel is a future enhancement). darwin-x86_64
-          # (Intel) is built LOCALLY: its prebuilt has no Metal dep and loads.
+          # don't bundle, so it fails to load. A CPU-only source build avoids it.
           - os: macos-14
             native_key: darwin-aarch64
             platkey: darwin-arm64
+            native_mode: source
+            experimental: false
+          # darwin-x86_64 (Intel mac): SOURCE on macos-13 (last Intel runner). The
+          # old 24h hang was the UNBOUNDED parallel compile — capped now (-PnativeJobs),
+          # so it builds fine. Included so CI produces ALL 5 npm packages for OIDC
+          # publishing (no local Intel-mac step needed).
+          - os: macos-13
+            native_key: darwin-x86_64
+            platkey: darwin-x64
             native_mode: source
             experimental: false
           # Windows: build from SOURCE too (same split-ggml-cpu reason as Linux,
@@ -324,3 +331,88 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/*
+
+  # --------------------------------------------------------------------------
+  # Publish npm — all 5 platform packages + launcher — via OIDC TRUSTED
+  # PUBLISHING (no token: npm trusts this workflow; needs a Trusted Publisher
+  # configured per package on npmjs.com + id-token:write here). Tag-only.
+  # --------------------------------------------------------------------------
+  publish-npm:
+    name: publish npm (OIDC)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Download platform npm tarballs (all 5 from the build legs)
+        uses: actions/download-artifact@v4
+        with:
+          pattern: npm-*
+          path: dist/npm
+      - name: Publish platform packages (OIDC, no token)
+        run: |
+          set -e
+          for t in dist/npm/npm-*/*.tgz; do echo "publish $t"; npm publish "$t" --access public; done
+      - name: Pack + publish the launcher LAST (its optionalDeps must exist)
+        run: |
+          set -e
+          cd cli/npm && npm pack && npm publish ./*.tgz --access public
+
+  # --------------------------------------------------------------------------
+  # Publish Maven Central — core (+5 native classifier jars) + -platform +
+  # starter + spring-ai — signed, via the Central Portal API (AUTOMATIC). Uses
+  # repo secrets: CENTRAL_USERNAME, CENTRAL_PASSWORD, SIGNING_KEY, SIGNING_PASSWORD.
+  # Tag-only.
+  # --------------------------------------------------------------------------
+  publish-maven:
+    name: publish Maven Central
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+      - name: Download all platform natives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: natives-*
+          path: dist/natives
+      - name: Stage every platform's natives into core resources
+        shell: bash
+        run: |
+          set -eu
+          mkdir -p core/src/main/resources/native
+          shopt -s nullglob
+          for z in dist/natives/natives-*/*.zip; do echo "stage $z"; unzip -o "$z" -d core/src/main/resources/native/ >/dev/null; done
+          ls -1 core/src/main/resources/native/
+      - name: Publish to staging, bundle, upload to Central (AUTOMATIC)
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+        run: |
+          set -eu
+          : "${CENTRAL_USERNAME:?set the CENTRAL_USERNAME repo secret}"
+          # buildNative finds the host (linux) bridge already staged from the
+          # artifact, so it stays up-to-date and does not recompile.
+          ./gradlew publishAllPublicationsToCentralStagingRepository --no-daemon --stacktrace
+          ( cd build/central-staging && zip -qr ../central-bundle.zip . -x '*.DS_Store' -x '*maven-metadata*' )
+          echo "signatures: $(unzip -l build/central-bundle.zip | grep -c '\.asc$')"
+          VER=$(grep -oE "version = '[0-9][^']*'" build.gradle | grep -oE '[0-9][^'\'']*')
+          TOKEN=$(printf '%s' "$CENTRAL_USERNAME:$CENTRAL_PASSWORD" | base64)
+          curl -sS --fail-with-body -X POST -H "Authorization: Bearer $TOKEN" \
+            -F bundle=@build/central-bundle.zip \
+            "https://central.sonatype.com/api/v1/publisher/upload?name=mochallama-${VER}&publishingType=AUTOMATIC"
