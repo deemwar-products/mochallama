@@ -70,17 +70,24 @@ task publish:local           # core jar now bundles darwin-x86_64 + -aarch64 + l
 
 ---
 
-## Tier 2 — npm publish  ⚠️ needs `npm login` (@deemwario)
+## Tier 2 — npm publish  (@deemwario — all 5 platforms + launcher)
+
+Publishes everything so `npx @deemwario/mochallama` works on every platform. Each
+platform ships a self-contained jlink **JDK 22** image (~31 MB) — no Java needed by
+the user; only the model downloads on first run.
 
 ```bash
-npm login                    # HUMAN: log in with @deemwario org publish rights
-task cli:npm:publish         # publishes the darwin-x64 platform pkg + the main launcher (public)
+# auth: put an npm AUTOMATION token (bypasses the org 2FA OTP) in .env:
+#   NPM_DEEMWAR_IO_PUBLISH_TOKEN=npm_xxx        # else `npm login` (OTP per package)
+# prereq: a SUCCESSFUL release.yml run on current code (gives @deemwario CI tarballs):
+gh workflow run release.yml --ref main && gh run watch -R deemwar-products/mochallama
+
+task cli:npm:publish         # 5 platform pkgs + launcher
 ```
-After this, `npx @deemwario/mochallama chat` works on macOS Intel. The other
-platforms' packages (`linux-x64`, `darwin-arm64`, `win32-x64`) are published
-from their CI `npm-*` tarballs — download them via `gh run download <id> -n npm-linux-x64`
-and `npm publish <tgz> --access public` each, then they resolve as
-`optionalDependencies` of the launcher.
+Sourcing: `darwin-x64` is built+packed on this Mac (no CI Intel runner); `linux-x64`,
+`linux-arm64`, `darwin-arm64`, `win32-x64` come from the release run's `npm-*` artifacts.
+Platform packages publish first, launcher last (its `optionalDependencies` resolve against them).
+`task cli:npm:publish:darwin-x64` does just the host + launcher as a quick path.
 
 ---
 
