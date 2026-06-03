@@ -83,10 +83,12 @@ def prebuiltRoot = file("$buildDir/llama-prebuilt")
 // Map our platform key -> llama.cpp release asset suffix + archive extension.
 def prebuiltAsset = {
     switch (nativePlatformKey) {
-        case 'darwin-x86_64':  return 'macos-x64'
-        case 'darwin-aarch64': return 'macos-arm64'
-        case 'linux-x86_64':   return 'ubuntu-x64'
-        case 'windows-x86_64': return 'win-cpu-x64'
+        case 'darwin-x86_64':   return 'macos-x64'
+        case 'darwin-aarch64':  return 'macos-arm64'
+        case 'linux-x86_64':    return 'ubuntu-x64'
+        case 'linux-aarch64':   return 'ubuntu-arm64'
+        case 'windows-x86_64':  return 'win-cpu-x64'
+        case 'windows-aarch64': return 'win-cpu-arm64'
         default: throw new GradleException("No prebuilt llama.cpp asset mapping for $nativePlatformKey")
     }
 }()
@@ -218,6 +220,50 @@ java {
     withJavadocJar()
 }
 
+// ---------------------------------------------------------------------
+// Native packaging — OS-specific classifier jars (NOT a fat jar).
+//
+// The main mochallama-core jar carries ONLY Java. Each platform's native libs
+// ship as a separate classifier artifact `natives-<os>-<arch>`, so:
+//   - consumers pull Java (~200 KB) + just their platform (~6-10 MB), not ~40 MB;
+//   - a new platform (e.g. linux-aarch64) is just another classifier — no fat
+//     rebuild, no bloat;
+//   - custom builders run `:core:buildNative` locally and publish only their own
+//     platform's native jar.
+// NativeLoader resolves /native/<platform>/ from the classpath regardless of
+// which jar supplies it, so there is NO runtime change.
+// ---------------------------------------------------------------------
+def nativeRoot = file("$projectDir/src/main/resources/native")
+
+// Keep natives OUT of the Java jar + sources jar — they are separate artifacts.
+tasks.named('jar')        { exclude 'native/**' }
+tasks.named('sourcesJar') { exclude 'native/**' }
+
+// Platforms to package = the host (staged by buildNative) PLUS any already
+// staged on disk (e.g. all platforms after `task release:download`).
+def stagedPlatforms = nativeRoot.exists() ?
+        nativeRoot.listFiles().findAll { it.directory }.collect { it.name } : []
+// nativePlatformKey is a GString; coerce to String so the Set dedupes it against
+// the (String) staged dir names instead of creating a duplicate task.
+def platformsToPackage = (([nativePlatformKey.toString()] + stagedPlatforms) as Set).toList().sort()
+
+def nativeJarTasks = platformsToPackage.collect { plat ->
+    tasks.register("nativeJar_${plat.replace('-', '_')}", Jar) {
+        if (plat == nativePlatformKey) dependsOn 'buildNative'
+        archiveClassifier = "natives-${plat}"
+        // Place entries under native/<platform>/ so they sit on the classpath
+        // exactly where NativeLoader looks (classpath:/native/<platform>/).
+        from(nativeRoot) { include "${plat}/**"; into 'native' }
+    }
+}
+// Expose the host platform's native jar so sibling projects (the demo app) can
+// put the natives back on their runtime classpath without bundling all platforms.
+configurations { hostNatives { canBeConsumed = true; canBeResolved = false } }
+artifacts {
+    def hostJar = nativeJarTasks.find { it.name == "nativeJar_${nativePlatformKey.replace('-', '_')}" }
+    if (hostJar) hostNatives(hostJar)
+}
+
 tasks.named('compileJava') { dependsOn 'buildNative' }
 tasks.named('processResources') { dependsOn 'buildNative' }
 // sourcesJar packages src/main/resources (which buildNative writes into),
@@ -235,6 +281,9 @@ publishing {
         maven(MavenPublication) {
             artifactId = 'mochallama-core'
             from components.java
+            // Attach each staged platform's native libs as a classifier artifact:
+            //   mochallama-core-<ver>-natives-<os>-<arch>.jar
+            nativeJarTasks.each { artifact(it) }
 
             pom {
                 name = 'mochallama-core'

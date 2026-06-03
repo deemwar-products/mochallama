@@ -182,7 +182,9 @@ public final class NativeLoader {
 
     /** Candidate platform keys we may ship natives for. */
     private static final List<String> KNOWN_PLATFORMS = List.of(
-            "darwin-x86_64", "darwin-aarch64", "linux-x86_64", "windows-x86_64");
+            "darwin-x86_64", "darwin-aarch64",
+            "linux-x86_64", "linux-aarch64",
+            "windows-x86_64");
 
     /**
      * The subset of {@link #KNOWN_PLATFORMS} actually bundled in this build —

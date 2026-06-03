@@ -35,6 +35,9 @@ dependencies {
     // auto-config (it only activates because the app pins spring-ai-core below).
     implementation project(':starter')
     implementation project(':spring-ai')
+    // core's jar is now Java-only (natives ship as classifier jars). Put the host
+    // platform's native libs back on the app's runtime classpath so it can run.
+    runtimeOnly project(path: ':core', configuration: 'hostNatives')
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
     // The app — being a concrete deployment — DOES pin a Spring AI version

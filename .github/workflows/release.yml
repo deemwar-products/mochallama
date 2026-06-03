@@ -51,6 +51,13 @@ jobs:
             platkey: linux-x64
             native_mode: source
             experimental: false
+          # Linux ARM64 (AWS Graviton, cloud ARM, Raspberry Pi) — free GitHub
+          # ARM runner, source build (same single-ggml-cpu reason as x86_64).
+          - os: ubuntu-24.04-arm
+            native_key: linux-aarch64
+            platkey: linux-arm64
+            native_mode: source
+            experimental: false
           # darwin-aarch64 (Apple Silicon / M1): SOURCE — the macOS arm64 prebuilt
           # libggml hard-links @rpath/libggml-metal (Metal GPU backend) which we
           # don't bundle, so it fails to load. A CPU-only source build avoids the
@@ -131,33 +138,9 @@ jobs:
           echo "Contents of $dir:"
           ls -la "$dir" || echo "(missing — buildNative did not stage this platform)"
 
-      - name: Build jlink image (Unix)
-        if: runner.os != 'Windows'
-        run: ./gradlew :cli:jlink --no-daemon --stacktrace
-
-      - name: Build jlink image (Windows)
-        if: runner.os == 'Windows'
-        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
-
-      - name: Stage jlink image into platform npm package
-        shell: bash
-        run: |
-          set -eu
-          plat="cli/npm/platforms/${{ matrix.platkey }}"
-          rm -rf "$plat/image"
-          mkdir -p "$plat/image"
-          cp -R cli/build/image/. "$plat/image/"
-          echo "Image staged into $plat/image:"
-          ls -la "$plat/image/bin" || true
-
-      - name: Pack platform npm package
-        shell: bash
-        run: |
-          set -eu
-          cd "cli/npm/platforms/${{ matrix.platkey }}"
-          npm pack
-          ls -la ./*.tgz
-
+      # --- LIBRARY artifact (the natives) — captured BEFORE the CLI jlink/npm
+      # steps so a CLI-packaging failure on a platform never loses the natives
+      # the library publish needs (the Windows jlink leg hit exactly this). ---
       - name: Zip native libs
         shell: bash
         run: |
@@ -171,19 +154,55 @@ jobs:
           fi
           ls -la dist-natives || true
 
-      - name: Upload platform npm tarball
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-${{ matrix.platkey }}
-          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
-          if-no-files-found: warn
-          retention-days: 30
-
       - name: Upload natives zip
         uses: actions/upload-artifact@v4
         with:
           name: natives-${{ matrix.native_key }}
           path: dist-natives/*.zip
+          if-no-files-found: warn
+          retention-days: 30
+
+      # --- CLI image + npm tarball (best-effort; failure here must not fail the
+      # native/library artifact above). ---
+      - name: Build jlink image (Unix)
+        if: runner.os != 'Windows'
+        continue-on-error: true
+        run: ./gradlew :cli:jlink --no-daemon --stacktrace
+
+      - name: Build jlink image (Windows)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: .\gradlew.bat :cli:jlink --no-daemon --stacktrace
+
+      - name: Stage jlink image into platform npm package
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          plat="cli/npm/platforms/${{ matrix.platkey }}"
+          [ -d "$plat" ] || { echo "no npm platform dir $plat — skipping"; exit 0; }
+          rm -rf "$plat/image"
+          mkdir -p "$plat/image"
+          cp -R cli/build/image/. "$plat/image/"
+          ls -la "$plat/image/bin" || true
+
+      - name: Pack platform npm package
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eu
+          plat="cli/npm/platforms/${{ matrix.platkey }}"
+          [ -d "$plat" ] || { echo "no npm platform dir $plat — skipping"; exit 0; }
+          cd "$plat"
+          npm pack
+          ls -la ./*.tgz
+
+      - name: Upload platform npm tarball
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-${{ matrix.platkey }}
+          path: cli/npm/platforms/${{ matrix.platkey }}/*.tgz
           if-no-files-found: warn
           retention-days: 30
 

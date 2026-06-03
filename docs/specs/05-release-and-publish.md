@@ -98,6 +98,24 @@ Release (pending):
 - [ ] Maven Central: namespace + GPG + creds (human-gated — see PUBLISHING.md).
 - [ ] npm: `@deemwarhq` org login (human-gated — see PUBLISHING.md).
 
+## Native packaging (jar layout)
+
+Decided 2026-06-02:
+- **v0.1.x → fat `core` jar** bundling all platforms' natives under
+  `native/<platform>/` (~40 MB with 4 platforms; ~9.6 MB per platform). Zero
+  config, works offline, one artifact. `NativeLoader` extracts only the running
+  platform's dir at runtime. Accepted: 40 MB is fine for now.
+- **v0.1.1 → split into per-platform classifier jars** (the LWJGL / JavaCPP /
+  sqlite-jdbc pattern): `mochallama-core` = Java only (~200 KB) +
+  `mochallama-core:natives-<platform>` (~10 MB each); a `-platform` aggregator
+  POM auto-selects via OS detection. This is the "shipping a real library, not a
+  school project" target — each consumer pulls ~10 MB, not 40.
+- npm/CLI is ALREADY split: the launcher declares per-platform packages as
+  `optionalDependencies`, so `npx` downloads only the matching platform image.
+- Cheap win (either layout): stop staging the redundant 3rd versioned lib name
+  (`lib*.0.0.9371.dylib`) — the loader needs only the load-name + SONAME — which
+  trims the natives ~⅓ (fat jar ~40 MB → ~25 MB).
+
 ## Out of scope for v0.1.x
 
 - Windows native (v0.1.1 — MSVC CMake port).
