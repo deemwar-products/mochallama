@@ -25,6 +25,7 @@ function platformKey() {
   if (p === 'darwin' && a === 'x64') return 'darwin-x64';
   if (p === 'darwin' && a === 'arm64') return 'darwin-arm64';
   if (p === 'linux' && a === 'x64') return 'linux-x64';
+  if (p === 'linux' && a === 'arm64') return 'linux-arm64';
   if (p === 'win32' && a === 'x64') return 'win32-x64';
   return null;
 }
@@ -38,7 +39,7 @@ const key = platformKey();
 if (!key) {
   fail(
     `unsupported platform: ${process.platform}/${process.arch}\n` +
-      'mochallama ships for: darwin-x64, darwin-arm64, linux-x64, win32-x64.'
+      'mochallama ships for: darwin-x64, darwin-arm64, linux-x64, linux-arm64, win32-x64.'
   );
 }
 
