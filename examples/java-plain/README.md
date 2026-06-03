@@ -11,8 +11,8 @@ mochallama is required.
 ## Dependencies
 
 ```
-implementation 'io.github.deemwario:mochallama-core:0.1.1'      // ChatEngine API
-runtimeOnly    'io.github.deemwario:mochallama-core-platform:0.1.1'  // native libs
+implementation 'io.github.deemwario:mochallama-core:0.1.2'      // ChatEngine API
+runtimeOnly    'io.github.deemwario:mochallama-core-platform:0.1.2'  // native libs
 ```
 
 Both are resolved from Maven Central (`mavenCentral()`).

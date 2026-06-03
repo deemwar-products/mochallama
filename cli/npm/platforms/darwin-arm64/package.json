@@ -1,6 +1,6 @@
 {
   "name": "@deemwario/mochallama-darwin-arm64",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "macOS Apple Silicon (arm64) jlink runtime image for @deemwario/mochallama. Installed automatically as an optional dependency of the main package.",
   "files": [
     "image"

@@ -90,8 +90,8 @@ git tag v0.1.0 && git push origin v0.1.0   # release.yml attaches all platform a
 The library now ships Java-only core + per-platform native jars (not a 40MB fat jar):
 ```gradle
 dependencies {
-  implementation 'io.github.deemwario:mochallama-core:0.1.1'        // Java, ~40KB
-  runtimeOnly    'io.github.deemwario:mochallama-core:0.1.1:natives-linux-x86_64'  // their platform
+  implementation 'io.github.deemwario:mochallama-core:0.1.2'        // Java, ~40KB
+  runtimeOnly    'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64'  // their platform
 }
 ```
 Platforms shipped: `natives-darwin-x86_64`, `natives-darwin-aarch64`,

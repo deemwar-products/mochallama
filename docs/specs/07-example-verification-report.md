@@ -4,7 +4,7 @@ Date: 2026-06-03. Verifies the **published** mochallama artifacts work for real
 consumers, pulling **only from Maven Central / npm** (no local build). Examples
 live in `examples/` (spec: `06-examples.md`).
 
-## Maven Central library — `io.github.deemwario:*:0.1.1` — ✅ ALL PASS (built + RAN)
+## Maven Central library — `io.github.deemwario:*:0.1.2` — ✅ ALL PASS (built + RAN)
 
 Each example resolved `0.1.1` from Maven Central (`--refresh-dependencies`, no
 `mavenLocal()`) **and was run end-to-end** against the cached qwen2.5-1.5b model.
@@ -21,7 +21,7 @@ aggregator (right platform loaded at runtime).
 
 ## npm CLI — `@deemwario/mochallama` — ❌ 0.1.1 BROKEN → FIXED (needs 0.1.2 republish)
 
-`npx @deemwario/mochallama@0.1.1` failed at runtime:
+`npx @deemwario/mochallama@0.1.2` failed at runtime:
 ```
 java.lang.IllegalStateException: no mochallama native binaries bundled for
 darwin-x86_64 — this build supports: (none)
