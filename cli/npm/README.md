@@ -1,4 +1,4 @@
-# @deemwarhq/mochallama
+# @deemwario/mochallama
 
 Run a local [llama.cpp](https://github.com/ggerganov/llama.cpp) LLM from your
 terminal. The engine is JVM-powered — `mochallama-core` bridges llama.cpp via
@@ -16,10 +16,10 @@ Installs and runs on:
 
 | platform               | companion package                     |
 |------------------------|---------------------------------------|
-| macOS Intel (x64)      | `@deemwarhq/mochallama-darwin-x64`    |
-| macOS Apple Silicon    | `@deemwarhq/mochallama-darwin-arm64`  |
-| Linux (x64)            | `@deemwarhq/mochallama-linux-x64`     |
-| Windows (x64)          | `@deemwarhq/mochallama-win32-x64`     |
+| macOS Intel (x64)      | `@deemwario/mochallama-darwin-x64`    |
+| macOS Apple Silicon    | `@deemwario/mochallama-darwin-arm64`  |
+| Linux (x64)            | `@deemwario/mochallama-linux-x64`     |
+| Windows (x64)          | `@deemwario/mochallama-win32-x64`     |
 
 `npm` pulls in only the companion matching your host (via each companion's
 `os`/`cpu` fields); the others are skipped. The launcher resolves the right one
@@ -29,10 +29,10 @@ at runtime.
 
 ```sh
 # One-shot via npx — drops straight into a chat session.
-npx @deemwarhq/mochallama
+npx @deemwario/mochallama
 
 # Or install globally.
-npm i -g @deemwarhq/mochallama
+npm i -g @deemwario/mochallama
 ```
 
 ## Usage
@@ -56,7 +56,7 @@ mochallama --help
 ```
 mochallama (this npm bin)
   └─ bin/mochallama.js                        # cross-platform launcher
-       └─ @deemwarhq/mochallama-<platform>    # resolved via os/cpu
+       └─ @deemwario/mochallama-<platform>    # resolved via os/cpu
             └─ image/bin/mochallama           # jlink launcher (trimmed JRE + JVM args)
                  └─ mochallama-core           # Panama FFM bridge → llama.cpp natives
 ```

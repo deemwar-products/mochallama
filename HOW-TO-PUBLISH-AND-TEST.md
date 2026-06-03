@@ -68,11 +68,11 @@ task publish:local           # core jar now bundles darwin-x86_64 + darwin-aarch
 
 ### 2c. npm  (needs `npm login`)
 ```bash
-npm login                    # @deemwarhq org
+npm login                    # @deemwario org
 task cli:npm:publish         # publishes darwin-x64 platform pkg + launcher (public)
 # other platforms: gh run download <id> -n npm-<plat> then `npm publish <tgz> --access public`
 ```
-→ `npx @deemwarhq/mochallama chat` works.
+→ `npx @deemwario/mochallama chat` works.
 
 ### 2d. Maven Central  (one-time setup — see PUBLISHING.md §Tier 3)
 Needs a Central Portal account (`io.github.deemwario`, GitHub-verified) +

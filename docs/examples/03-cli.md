@@ -1,6 +1,6 @@
 # CLI
 
-`@deemwarhq/mochallama` is a terminal CLI that runs a local llama.cpp model
+`@deemwario/mochallama` is a terminal CLI that runs a local llama.cpp model
 straight from the command line. It is JVM-powered (Project Panama FFM bridge,
 same `mochallama-core` engine as the Spring app) but shipped as a self-contained
 **jlink runtime image** — a trimmed JRE plus the native dylibs — so you do
@@ -14,7 +14,7 @@ same `mochallama-core` engine as the Spring app) but shipped as a self-contained
 ## Install
 
 ```bash
-npm i -g @deemwarhq/mochallama
+npm i -g @deemwario/mochallama
 ```
 
 ## List model profiles
