@@ -2,7 +2,7 @@
 
 **Local LLM for Spring Boot — Java → Project Panama FFM → a thin C++ `common_chat` bridge → vendored llama.cpp. No JNI. Spring-first.**
 
-`tools.deemwar:mochallama-*` · npm `@deemwarhq/mochallama` · MIT · JDK 22 · OpenAI-compatible HTTP · streaming · tool calling · Actuator metrics
+`tools.deemwar:mochallama-*` · npm `@deemwario/mochallama` · MIT · JDK 22 · OpenAI-compatible HTTP · streaming · tool calling · Actuator metrics
 
 [Documentation](https://deemwar-products.github.io/mochallama/) · [GitHub](https://github.com/deemwar-products/mochallama)
 
@@ -72,7 +72,7 @@ curl http://localhost:8080/v1/chat/completions \
 | `core`     | `tools.deemwar:mochallama-core`                 | Framework-free Panama FFM bridge + `ChatEngine` + the stable `MochallamaClient` contract. Bundles the native dylibs. No Spring. |
 | `starter`  | `tools.deemwar:mochallama-spring-boot-starter`  | Spring Boot starter: autoconfigures `LlamaCppService`, the OpenAI-compatible REST controller, Actuator metrics + health. No Spring AI dependency. |
 | `spring-ai`| `tools.deemwar:mochallama-spring-ai`            | Spring AI `ChatModel` / `ChatClient` adapter over `MochallamaClient`. Spring AI is `compileOnly` so the consumer pins the version. |
-| `cli`      | npm `@deemwarhq/mochallama`                        | Terminal CLI (`mochallama models` / `mochallama chat`), shipped as a self-contained jlink image — no JDK required. |
+| `cli`      | npm `@deemwario/mochallama`                        | Terminal CLI (`mochallama models` / `mochallama chat`), shipped as a self-contained jlink image — no JDK required. |
 | `app`      | _(not published)_                               | Demo Spring Boot app that wires the starter + Spring AI adapter together, plus a small web UI. The reference for running everything end-to-end. |
 
 ## Endpoints
@@ -204,7 +204,7 @@ For the framework-free path, depend on `mochallama-core` and use
 ## CLI
 
 ```bash
-npm i -g @deemwarhq/mochallama   # macOS x64 only for v0.1.0
+npm i -g @deemwario/mochallama   # macOS x64 only for v0.1.0
 mochallama models
 mochallama chat --model qwen2.5-3b
 ```

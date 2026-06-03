@@ -20,10 +20,10 @@ Local LLM for the JVM: `Java → Project Panama FFM → custom thin C++ bridge (
 - Hugging Face by model ID: shared `HuggingFaceModels` resolver (core; CLI + Spring de-duped); `llamacpp.model.hf-id` config; gated models fail early (`MODEL_GATED`).
 - Tool-capable model presets only: `qwen2.5-1.5b` (default), `qwen2.5-3b`, `qwen3-4b`, `phi-4-mini`. Dropped gemma + llama-3.2.
 - License **MIT** everywhere (LICENSE + NOTICE + POMs + npm); llama-bindings scrubbed from public docs.
-- Multi-platform code: `NativeLoader` resolves os/arch (`.dylib`/`.so`/`.dll`); esbuild-style npm packages (`@deemwarhq/mochallama` launcher + per-platform `optionalDependencies`); `npx @deemwarhq/mochallama chat` works cross-platform.
+- Multi-platform code: `NativeLoader` resolves os/arch (`.dylib`/`.so`/`.dll`); esbuild-style npm packages (`@deemwario/mochallama` launcher + per-platform `optionalDependencies`); `npx @deemwario/mochallama chat` works cross-platform.
 - Cross-platform bridge `CMakeLists` (Apple: Accelerate/BLAS + `@loader_path`; Linux/Windows: plain CPU + `$ORIGIN`/none).
 - VitePress docs live on GitHub Pages: https://deemwar-products.github.io/mochallama/ (specs, models, metrics, examples).
-- Branding: Maven group `tools.deemwar` (→ `io.github.deemwario` planned for Central), Java package `tools.deemwar.mochallama`, npm scope `@deemwarhq`, gh `deemwario`, GitHub `deemwar-products`.
+- Branding: Maven group `tools.deemwar` (→ `io.github.deemwario` planned for Central), Java package `tools.deemwar.mochallama`, npm scope `@deemwario`, gh `deemwario`, GitHub `deemwar-products`.
 
 ## Release state
 - `v0.1.0` tagged + pushed (version off `-SNAPSHOT`).
@@ -64,7 +64,7 @@ local mac natives + `task release:download` (pulls CI natives) → `task publish
 
 ## Remaining work
 - **#24 LOCAL-PUBLISH** (pending): `task release:download` → publish cross-platform npm + Maven Central. Gated on:
-  - npm: `npm login` + `@deemwarhq` org with publish rights
+  - npm: `npm login` + `@deemwario` org with publish rights
   - Maven Central: Central Portal account claiming `io.github.deemwario` (GitHub-verified) + GPG key → env `CENTRAL_PORTAL_USERNAME/TOKEN`, `SIGNING_KEY/PASSWORD`; switch group to `io.github.deemwario`
   - `task release:download` now implemented (pulls CI natives + stages them).
 - Linux CI leg (#1) + `build.yml` (#3) FIXED this session; Windows (#2) still deferred to v0.1.1.
