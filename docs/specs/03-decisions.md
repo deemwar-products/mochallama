@@ -241,3 +241,26 @@ closure must include `ggml-rpc` or the library fails to load at runtime.
 **Cost:** A shallow llama.cpp checkout is still needed for headers (fast — the
 clone was never the bottleneck). Supersedes the build-time half of decision #3
 (we still pin + read the vendored tree; we no longer compile it by default).
+
+### 12a. Per-platform refinement: prebuilt only where ggml-cpu is single (2026-06-02)
+
+**Finding:** the **linux and windows** prebuilt releases ship a *split*
+`ggml-cpu` — ~15 arch-specific libs (`ggml-cpu-haswell`, `ggml-cpu-zen4`, …)
+runtime-dispatched via `GGML_BACKEND_DL`, with **no single `ggml-cpu`** and no
+`ggml-blas`. `NativeLoader` loads an explicit dependency chain, so that split set
+doesn't load. The **macOS** prebuilts (x64 + arm64) ship a *single* `ggml-cpu`,
+which loads cleanly. Windows additionally ships **no import `.lib`** for MSVC.
+
+**Decision:**
+- **macOS x64 + arm64 → prebuilt** (single ggml-cpu; fast; arm64 = M1 coverage).
+- **linux + windows → build from source** (one `ggml-cpu`, `GGML_OPENMP` +
+  `GGML_NATIVE` OFF → no `libomp`/`vcomp` dep, portable baseline; MSVC produces
+  its own import libs, sidestepping the missing-`.lib` issue).
+- `NativeLoader` made tolerant: load each bundled lib by absolute path, **skip**
+  any stem not present (blas/rpc vary), require only that `llamabridge` loads.
+- A **native load smoke test** (`NativeLoadSmokeTest`, calls `llb_version`, no
+  model) runs in CI on every leg — the runtime oracle that build-green lacks.
+
+**Revisit:** supporting the split-`ggml-cpu` prebuilt for linux/windows (wiring
+`GGML_BACKEND_DL` discovery into `NativeLoader`) would let those go prebuilt too;
+deferred until verified.

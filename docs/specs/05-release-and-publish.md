@@ -37,12 +37,15 @@ inference speed — see company-research `14-cluster-local-first-ai.md`,
 Cross-platform natives cannot all be built on one machine. Split by where each
 is cheapest/most reliable:
 
-| Native | Built where | Why |
-|---|---|---|
-| `darwin-x86_64` | **local** (dev Intel Mac) | the macos-13 CI runner hung 24h; local build is cached + 72s |
-| `darwin-aarch64` | CI (`macos-14`) | green leg; no Apple-Silicon machine locally |
-| `linux-x86_64` | CI (`ubuntu-latest`) | can't build on a Mac |
-| `windows-x86_64` | CI (`windows-latest`) | experimental; deferred to v0.1.1 if MSVC CMake unfixed |
+| Native | Built where | Mode | Why |
+|---|---|---|---|
+| `darwin-x86_64` | **local** (dev Intel Mac) | prebuilt | macos-13 CI hung 24h; local prebuilt ~11s, single ggml-cpu |
+| `darwin-aarch64` (M1) | CI (`macos-14`) | prebuilt | macOS arm64 prebuilt = single ggml-cpu, loads cleanly |
+| `linux-x86_64` | CI (`ubuntu-latest`) | **source** | linux prebuilt ships split ggml-cpu (no single) — source gives one |
+| `windows-x86_64` | CI (`windows-latest`) | **source** | split ggml-cpu + no import `.lib` in prebuilt — source avoids both |
+
+Every leg runs `NativeLoadSmokeTest` (loads the closure + `llb_version`, no model)
+as a CI runtime oracle. Windows stays `experimental` until its smoke passes.
 
 A complete multi-platform `core` jar = local `darwin-x86_64` natives + the CI
 natives downloaded and staged together before `:core:publish`.
