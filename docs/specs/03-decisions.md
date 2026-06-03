@@ -251,16 +251,25 @@ runtime-dispatched via `GGML_BACKEND_DL`, with **no single `ggml-cpu`** and no
 doesn't load. The **macOS** prebuilts (x64 + arm64) ship a *single* `ggml-cpu`,
 which loads cleanly. Windows additionally ships **no import `.lib`** for MSVC.
 
-**Decision:**
-- **macOS x64 + arm64 → prebuilt** (single ggml-cpu; fast; arm64 = M1 coverage).
-- **linux + windows → build from source** (one `ggml-cpu`, `GGML_OPENMP` +
-  `GGML_NATIVE` OFF → no `libomp`/`vcomp` dep, portable baseline; MSVC produces
-  its own import libs, sidestepping the missing-`.lib` issue).
+**Decision (final, after the smoke oracle caught three distinct failures):**
+- **macOS x64 → prebuilt**, built **locally** on the dev Intel Mac. The x64
+  prebuilt has a single ggml-cpu and **no Metal** dep, so it loads. (~11s.)
+- **linux + macOS arm64 + windows → build from source** in CI (one `ggml-cpu`,
+  `GGML_OPENMP` + `GGML_NATIVE` OFF → no `libomp`/`vcomp` dep, portable baseline;
+  MSVC produces its own import libs). Source sidesteps every prebuilt landmine:
+  - linux/windows prebuilt = split ggml-cpu (no single) — won't load.
+  - **arm64 prebuilt `libggml` hard-links `@rpath/libggml-metal`** — we don't
+    bundle Metal, so it `UnsatisfiedLinkError`s. (Metal accel = future work.)
+  - windows prebuilt = no import `.lib` for MSVC linking.
 - `NativeLoader` made tolerant: load each bundled lib by absolute path, **skip**
   any stem not present (blas/rpc vary), require only that `llamabridge` loads.
+- **Native staging bug fixed:** the lib-name glob's `.dll.` mid-name rule matched
+  MSBuild's `*.dll.recipe` intermediates and copied their bytes over the real DLL
+  ("%1 is not a valid Win32 application"). Restricted the mid-name rule to Linux
+  `.so`; exact-extension match for `.dylib`/`.dll`.
 - A **native load smoke test** (`NativeLoadSmokeTest`, calls `llb_version`, no
-  model) runs in CI on every leg — the runtime oracle that build-green lacks.
+  model) runs in CI on every leg — the runtime oracle that caught all three of
+  the above (each had a *green build* but failed to load).
 
-**Revisit:** supporting the split-`ggml-cpu` prebuilt for linux/windows (wiring
-`GGML_BACKEND_DL` discovery into `NativeLoader`) would let those go prebuilt too;
-deferred until verified.
+**Revisit:** prebuilt for linux/windows/arm64 (wiring `GGML_BACKEND_DL` discovery +
+bundling Metal) would drop the source compile; deferred until the smoke verifies it.

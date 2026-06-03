@@ -46,6 +46,12 @@ target_compile_definitions(llamabridge PRIVATE
     LLB_LLAMA_TAG="b9371"
 )
 
+# MSVC does not export DLL symbols by default (Unix exports everything). Without
+# this, the bridge DLL loads but Java can't find llb_chat_create / llb_version
+# etc. ("Symbol not found in libllamabridge"). Auto-export the whole extern-"C"
+# surface so the Windows DLL matches the macOS/Linux default visibility.
+set_target_properties(llamabridge PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
 if(DEFINED LLB_PREBUILT_DIR AND NOT LLB_PREBUILT_DIR STREQUAL "")
     # -------------------- PREBUILT MODE --------------------
     message(STATUS "llamabridge: linking against PREBUILT llama.cpp in ${LLB_PREBUILT_DIR}")

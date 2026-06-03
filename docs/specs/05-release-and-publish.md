@@ -39,13 +39,15 @@ is cheapest/most reliable:
 
 | Native | Built where | Mode | Why |
 |---|---|---|---|
-| `darwin-x86_64` | **local** (dev Intel Mac) | prebuilt | macos-13 CI hung 24h; local prebuilt ~11s, single ggml-cpu |
-| `darwin-aarch64` (M1) | CI (`macos-14`) | prebuilt | macOS arm64 prebuilt = single ggml-cpu, loads cleanly |
-| `linux-x86_64` | CI (`ubuntu-latest`) | **source** | linux prebuilt ships split ggml-cpu (no single) — source gives one |
-| `windows-x86_64` | CI (`windows-latest`) | **source** | split ggml-cpu + no import `.lib` in prebuilt — source avoids both |
+| `darwin-x86_64` | **local** (dev Intel Mac) | prebuilt | single ggml-cpu, no Metal dep — loads; ~11s |
+| `darwin-aarch64` (M1) | CI (`macos-14`) | **source** | arm64 prebuilt libggml hard-links Metal (not bundled) |
+| `linux-x86_64` | CI (`ubuntu-latest`) | **source** | linux prebuilt ships split ggml-cpu (no single) |
+| `windows-x86_64` | CI (`windows-latest`) | **source** | split ggml-cpu + no import `.lib` in prebuilt |
 
-Every leg runs `NativeLoadSmokeTest` (loads the closure + `llb_version`, no model)
-as a CI runtime oracle. Windows stays `experimental` until its smoke passes.
+Every leg runs `NativeLoadSmokeTest` (loads the full native closure + calls
+`llb_version`, no model) as a CI runtime oracle — it caught a distinct
+load failure on each of arm64 (Metal), windows (corrupt-DLL staging bug), that a
+build-only check missed. Windows stays `experimental` until its smoke passes.
 
 A complete multi-platform `core` jar = local `darwin-x86_64` natives + the CI
 natives downloaded and staged together before `:core:publish`.
