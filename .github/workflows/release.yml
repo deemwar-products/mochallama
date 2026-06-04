@@ -241,7 +241,7 @@ jobs:
       - name: Upgrade npm (OIDC trusted publishing needs npm >= 11.5.1)
         run: npm install -g npm@latest
       - name: Download platform npm tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: npm-*
           path: dist/npm
@@ -295,7 +295,7 @@ jobs:
           for z in dist/natives/*.zip; do unzip -o "$z" -d core/src/main/resources/native/ >/dev/null; done
 
       - name: Download platform npm tarballs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: npm-*
           path: artifacts
