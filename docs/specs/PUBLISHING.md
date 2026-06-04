@@ -76,18 +76,20 @@ Publishes everything so `npx @deemwario/mochallama` works on every platform. Eac
 platform ships a self-contained jlink **JDK 22** image (~31 MB) — no Java needed by
 the user; only the model downloads on first run.
 
-```bash
-# auth: put an npm AUTOMATION token (bypasses the org 2FA OTP) in .env:
-#   NPM_DEEMWAR_IO_PUBLISH_TOKEN=npm_xxx        # else `npm login` (OTP per package)
-# prereq: a SUCCESSFUL release.yml run on current code (gives @deemwario CI tarballs):
-gh workflow run release.yml --ref main && gh run watch -R deemwar-products/mochallama
+**All publishing is CI-driven via OIDC trusted publishing — no token, no 2FA, no local
+`npm publish`.** It happens automatically inside `release.yml` on a `v*` tag.
 
-task cli:npm:publish         # 5 platform pkgs + launcher
-```
-Sourcing: `darwin-x64` is built+packed on this Mac (no CI Intel runner); `linux-x64`,
-`linux-arm64`, `darwin-arm64`, `win32-x64` come from the release run's `npm-*` artifacts.
-Platform packages publish first, launcher last (its `optionalDependencies` resolve against them).
-`task cli:npm:publish:darwin-x64` does just the host + launcher as a quick path.
+Sourcing:
+- `linux-x64`, `linux-arm64`, `darwin-arm64`, `win32-x64` — jlink image built on their own
+  CI runners, packed, OIDC-published.
+- `darwin-x64` — no Intel-mac CI runner exists, so the jlink image is built **once on a Mac**
+  (`task cli:stage-darwin-x64`, uploaded to release `cli-darwin-x64`); `release.yml` downloads
+  it, packs on ubuntu, and OIDC-publishes it like the others.
+- the **launcher** publishes **last**, so its 5 `optionalDependencies` already resolve.
+
+The publish loop is idempotent — already-published `name@version` pairs are skipped, so a
+re-run never 403s. One-time per package: enable **Trusted Publisher** on npmjs.com
+(Settings → Trusted Publisher → GitHub Actions → repo + `release.yml`).
 
 ---
 

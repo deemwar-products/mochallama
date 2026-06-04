@@ -33,6 +33,10 @@ permissions:
 
 env:
   NATIVES_RELEASE: natives-b9371
+  # Durable prerelease holding the locally-built Intel (darwin-x64) jlink image.
+  # Seeded from a Mac with `task cli:stage-darwin-x64` (no Intel CI runner exists).
+  CLI_DARWIN_X64_RELEASE: cli-darwin-x64
+  CLI_DARWIN_X64_IMAGE: mochallama-cli-image-darwin-x64.zip
 
 jobs:
   # --------------------------------------------------------------------------
@@ -168,18 +172,68 @@ jobs:
           retention-days: 30
 
   # --------------------------------------------------------------------------
-  # Publish the 4 CI platform npm packages via OIDC trusted publishing (no token).
-  # darwin-x64 + the launcher are published LOCALLY (task cli:npm:publish).
+  # darwin-x64 (Intel mac) npm package. No Intel CI runner exists, so instead of
+  # BUILDING the jlink image here we DOWNLOAD the one staged locally into the
+  # `cli-darwin-x64` release (task cli:stage-darwin-x64), stamp the bump version,
+  # and npm-pack it on ubuntu (packing is platform-independent). The resulting
+  # tarball is published via OIDC alongside the 4 CI-built platforms — no local
+  # npm publish, no 2FA.
+  # --------------------------------------------------------------------------
+  cli-darwin-x64:
+    name: cli (darwin-x64, staged image)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download staged Intel jlink image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p dl
+          gh release download "$CLI_DARWIN_X64_RELEASE" -R "$GITHUB_REPOSITORY" \
+            -p "$CLI_DARWIN_X64_IMAGE" -D dl
+          plat=cli/npm/platforms/darwin-x64
+          rm -rf "$plat/image"; mkdir -p "$plat/image"
+          unzip -o "dl/$CLI_DARWIN_X64_IMAGE" -d "$plat/image" >/dev/null
+          if [ -f "$plat/image/STAGED_FROM_SHA" ]; then
+            echo "Intel image staged from commit: $(cat "$plat/image/STAGED_FROM_SHA")"
+            rm -f "$plat/image/STAGED_FROM_SHA"
+          fi
+          ls -la "$plat/image/bin" || true
+      - name: Pack darwin-x64 npm package
+        run: |
+          set -eu
+          cd cli/npm/platforms/darwin-x64
+          npm pack
+          ls -la ./*.tgz
+      - name: Upload darwin-x64 npm tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-darwin-x64
+          path: cli/npm/platforms/darwin-x64/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+  # --------------------------------------------------------------------------
+  # Publish ALL npm packages via OIDC trusted publishing (no token, no 2FA):
+  # the 4 CI-built platforms + the staged darwin-x64 + the launcher LAST (so all
+  # five optionalDependencies already resolve when the launcher lands).
+  # Each package needs a Trusted Publisher configured once on npmjs.com
+  # (Settings -> Trusted Publisher -> GitHub Actions, repo + release.yml).
   # --------------------------------------------------------------------------
   publish-npm:
     name: publish npm (OIDC)
-    needs: build-cli
+    needs: [build-cli, cli-darwin-x64]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -191,17 +245,35 @@ jobs:
         with:
           pattern: npm-*
           path: dist/npm
-      - name: Publish platform packages (OIDC, no token)
+      - name: Publish platform packages then launcher (OIDC, idempotent)
         run: |
           set -e
-          for t in dist/npm/npm-*/*.tgz; do echo "publish $t"; npm publish "$t" --access public; done
+          # Skip any (name, version) already on the registry so re-runs don't 403.
+          publish_tgz () {
+            local tgz="$1"
+            local name ver
+            # Read name + version straight from the tarball's package.json.
+            name=$(tar -xzOf "$tgz" package/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).name))")
+            ver=$(tar -xzOf "$tgz" package/package.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).version))")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "skip $name@$ver (already published)"
+            else
+              echo "publish $name@$ver  ($tgz)"
+              npm publish "$tgz" --access public
+            fi
+          }
+          # Platform packages first (order among them doesn't matter).
+          for t in dist/npm/npm-*/*.tgz; do publish_tgz "$t"; done
+          # Launcher LAST, so its 5 optionalDependencies all already resolve.
+          cd cli/npm && npm pack && cd - >/dev/null
+          publish_tgz cli/npm/*.tgz
 
   # --------------------------------------------------------------------------
   # Attach build outputs to the GitHub Release (tag-only).
   # --------------------------------------------------------------------------
   release:
     name: assemble release assets
-    needs: [build-cli]
+    needs: [build-cli, cli-darwin-x64]
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     permissions:

@@ -1,6 +1,6 @@
 {
   "name": "@deemwario/mochallama-linux-x64",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Linux (x86_64) jlink runtime image for @deemwario/mochallama. Installed automatically as an optional dependency of the main package.",
   "files": [
     "image"

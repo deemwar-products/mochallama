@@ -44,7 +44,7 @@ see "Publish state" below.
 - `task build` / `task test` / `task native` (`:core:buildNative`)
 - `task app:run` — demo app + web UI
 - `task publish:local` — core+starter+spring-ai → `~/.m2` (works today, host arch only)
-- `task cli:npm:pack` / `cli:npm:publish` — npm (darwin-x64 local; other platforms from CI)
+- `task cli:stage-darwin-x64` — build the Intel jlink image locally + upload to the `cli-darwin-x64` GitHub release (gh, no npm); CI downloads it to publish the darwin-x64 npm pkg via OIDC. npm itself is **never** published locally — `release.yml` does all 5 platforms + launcher via OIDC on a `v*` tag.
 - `task publish:central` — **STUB, `exit 1`** — needs creds + signing
 - `task release` — build+test+publish-local+jlink, prints manual next steps (no auto-publish)
 

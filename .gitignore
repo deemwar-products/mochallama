@@ -53,6 +53,9 @@ core/src/main/resources/native/*/*.metallib
 ### Release / distribution build output ###
 # jlink runtime image (Badass Runtime) — produced by `./gradlew :cli:jlink`
 cli/build/
+# the staged Intel jlink image zip produced by `task cli:stage-darwin-x64`
+# (uploaded to the `cli-darwin-x64` GitHub release, never committed)
+mochallama-cli-image-darwin-x64.zip
 # npm wrapper: the jlink image is copied into each platform package's image/
 # dir at pack/CI time (only the .gitkeep placeholder is tracked), plus pack
 # output and any locally-installed deps.

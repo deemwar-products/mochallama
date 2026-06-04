@@ -44,51 +44,52 @@ Also: open http://localhost:8080 (web chat UI), and `./gradlew :cli:run --args="
 
 ---
 
-## 2. PUBLISH — from local
+## 2. PUBLISH — CI-driven, nothing published from local
 
-### 2a. Merge the branch first
-```bash
-gh pr view 11 -R deemwar-products/mochallama        # review the green checks
-gh pr merge 11 -R deemwar-products/mochallama --squash
-git checkout main && git pull
+Publishing is a **two-tier** pipeline. Native compilation and the public publish are
+decoupled, and **no package is ever published from a laptop** (no `npm login`, no 2FA,
+no local Maven push).
+
+```
+Tier 0  natives.yml     (rare)  build llama.cpp+bridge per platform -> release `natives-b9371`
+Tier 0' cli:stage-...  (local)  build the Intel jlink image, upload -> release `cli-darwin-x64`
+Tier 2  release.yml    (v* tag) download both -> Maven Central + all 5 npm + launcher, via OIDC
 ```
 
-### 2b. Get all-platform natives, build ONE complete jar
-The release workflow builds linux + darwin-aarch64 (+ windows best-effort) natives.
-Your darwin-x86_64 is built locally. Combine them:
+### 2a. (only if cli/ or core/ code changed) re-stage the Intel image
+There is no Intel-mac CI runner, so the darwin-x64 jlink image is built **once on a Mac**
+and parked in a durable GitHub release. Version-bump-only commits do **not** need this.
 ```bash
-# trigger a release build if there isn't a recent green one (fast now — prebuilt):
-gh workflow run release.yml --ref main -R deemwar-products/mochallama
-gh run watch -R deemwar-products/mochallama
-
-task release:download        # pulls CI natives, stages them next to your local mac build
-task publish:local           # core jar now bundles darwin-x86_64 + darwin-aarch64 + linux  -> ~/.m2
+task cli:stage-darwin-x64    # build + load-smoke the Intel image, upload to release `cli-darwin-x64`
 ```
-→ This single jar runs on **Intel Mac, M1 Mac, and Linux**.
 
-### 2c. npm  (needs `npm login`)
+### 2b. Bump the version + tag
 ```bash
-npm login                    # @deemwario org
-task cli:npm:publish         # publishes darwin-x64 platform pkg + launcher (public)
-# other platforms: gh run download <id> -n npm-<plat> then `npm publish <tgz> --access public`
+# bump build.gradle `version` and all cli/npm*/package.json (+ launcher optionalDependencies)
+git commit -am "release: vX.Y.Z" && git tag vX.Y.Z && git push origin main vX.Y.Z
 ```
-→ `npx @deemwario/mochallama chat` works.
 
-### 2d. Maven Central  (one-time setup — see PUBLISHING.md §Tier 3)
-Needs a Central Portal account (`io.github.deemwario`, GitHub-verified) +
-GPG key + the gradle signing plumbing. Until then, consumers use `~/.m2` (2b) or JitPack off the tag.
+### 2c. release.yml does the rest (no manual step)
+On the `v*` tag it:
+- **Maven Central** — one Linux runner downloads all 5 native zips, builds the classifier
+  jars + `-platform` aggregator, signs, and uploads to Central (`publishingType=AUTOMATIC`).
+- **npm** — builds 4 platform jlink images on their own runners, downloads the staged
+  darwin-x64 image, then `publish-npm` publishes **all 5 platforms + the launcher (last)**
+  via **OIDC trusted publishing** — no token. Idempotent: already-published versions are skipped.
+- **GitHub Release** — attaches the npm tarballs, native zips, and the app fat jar.
 
-### 2e. Cut the official GitHub Release (the only "push")
-```bash
-git tag v0.1.0 && git push origin v0.1.0   # release.yml attaches all platform assets
-```
+→ `npx @deemwario/mochallama chat` and the Maven coordinates below both work afterward.
+
+> One-time per package: enable **Trusted Publisher** on npmjs.com (Settings → Trusted
+> Publisher → GitHub Actions → repo + `release.yml`) for each `@deemwario/mochallama*`
+> package and the launcher. Required before its first OIDC publish.
 
 ---
 
 ## How consumers use it (OS-specific classifier jars)
 
 The library now ships Java-only core + per-platform native jars (not a 40MB fat jar):
-```gradle
+```groovy
 dependencies {
   implementation 'io.github.deemwario:mochallama-core:0.1.2'        // Java, ~40KB
   runtimeOnly    'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64'  // their platform
@@ -123,8 +124,8 @@ export JAVA_HOME=<jdk-22>
 | CI multi-platform build + **load smoke** (linux x64 + ARM64, macOS arm64, windows x64) | ✅ all green (run 26862489610) |
 | OS-specific classifier jars (Java core + per-platform native jars) | ✅ verified (app responds) |
 | `build.yml` light PR check | ✅ pass |
-| npm publish | ⏸ needs `npm login` |
-| Maven Central | ⏸ needs Portal account + GPG (PUBLISHING.md §Tier 3) |
+| npm publish (OIDC, all 5 + launcher) | ✅ CI via `release.yml`; darwin-x64 from staged image |
+| Maven Central (`io.github.deemwario`, AUTOMATIC) | ✅ CI via `release.yml` (0.1.4 live) |
 
 Full detail: `PUBLISHING.md` (channels) · `docs/specs/05-release-and-publish.md` (spec) ·
 huddle note `~/.config/muthuishere-agent-skills/mochallama/ci-fix-tier1-workflows/huddle/2026-06-02.md`.

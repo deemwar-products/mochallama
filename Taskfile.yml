@@ -142,21 +142,32 @@ tasks:
       - 'echo "  launcher: {{.NPM_DIR}}/*.tgz     (resolves the platform pkg at runtime)"'
       - 'echo "Inspect with: tar tzf {{.PLAT_DIR}}/*.tgz | head"'
 
-  cli:npm:publish:
-    desc: 'PUBLISH ALL @deemwario/mochallama* packages to npm: 5 platform pkgs + launcher. darwin-x64 packed locally; linux-x64/linux-arm64/darwin-arm64/win32-x64 from a release.yml run. Auth via NPM_DEEMWAR_IO_PUBLISH_TOKEN (.env) or `npm login`. RUN_ID=<id> optional.'
-    dotenv: ['.env']
-    cmds:
-      - 'echo "Publishing ALL @deemwario/mochallama* packages PUBLICLY (5 platforms + launcher). Ctrl-C within 5s to abort."'
-      - sleep 5
-      - bash scripts/publish-npm.sh
-
-  cli:npm:publish:darwin-x64:
-    desc: 'Publish ONLY the darwin-x64 platform pkg + launcher locally (quick path; other platforms unpublished). Builds + packs first.'
+  cli:stage-darwin-x64:
+    desc: 'Build the darwin-x64 (Intel) jlink image LOCALLY, verify it loads, and upload it to the durable `cli-darwin-x64` GitHub prerelease. release.yml downloads it to npm-publish @deemwario/mochallama-darwin-x64 via OIDC (no Intel CI runner, NO local npm publish, NO 2FA). Re-run ONLY when cli/ or core/ code changes — version-bump-only commits need no re-stage.'
     deps:
-      - cli:npm:pack
+      - cli:image
+    vars:
+      REL: cli-darwin-x64
+      ZIP: mochallama-cli-image-darwin-x64.zip
+      REPO: deemwar-products/mochallama
     cmds:
-      - cd {{.NPM_DIR}}/platforms/darwin-x64 && npm publish --access public
-      - cd {{.NPM_DIR}} && npm publish --access public
+      # Load oracle: prove the freshly built Intel natives + jlink image actually load
+      # on THIS Intel host before we stage them (the same guard CI runs per platform).
+      - ./gradlew :core:test --tests '*NativeLoadSmoke*'
+      # Record provenance so release.yml can log which commit the image was built from.
+      - git rev-parse HEAD > {{.IMAGE_DIR}}/STAGED_FROM_SHA
+      - rm -f {{.ZIP}}
+      - cd {{.IMAGE_DIR}} && zip -qry "$OLDPWD/{{.ZIP}}" .
+      # Durable prerelease, created once; the asset is overwritten (--clobber) on every re-stage.
+      - >-
+        GH_TOKEN="$(gh auth token --user deemwario)" gh release view {{.REL}} -R {{.REPO}} >/dev/null 2>&1 ||
+        GH_TOKEN="$(gh auth token --user deemwario)" gh release create {{.REL}} -R {{.REPO}} --prerelease
+        --title "CLI Intel image (darwin-x64)"
+        --notes "Locally-built darwin-x64 jlink runtime image. There is no Intel-mac CI runner, so release.yml downloads this asset, npm-packs it, and publishes @deemwario/mochallama-darwin-x64 via OIDC. Re-staged from a Mac only when cli/ or core/ code changes."
+      - GH_TOKEN="$(gh auth token --user deemwario)" gh release upload {{.REL}} -R {{.REPO}} {{.ZIP}} --clobber
+      - 'echo ""'
+      - 'echo "Staged {{.ZIP}} ($(git rev-parse --short HEAD)) to release {{.REL}}."'
+      - 'echo "release.yml will download it on the next v* tag and publish the darwin-x64 npm package via OIDC."'
 
   docs:dev:
     desc: Run the VitePress docs site in dev mode (hot reload).
@@ -186,8 +197,7 @@ tasks:
       - 'echo "  lib    : ~/.m2 mochallama-core (also run `task publish:central` once secrets exist)"'
       - 'echo "  cli     : {{.IMAGE_DIR}}/bin/mochallama (jlink runtime image)"'
       - 'echo ""'
-      - 'echo "Next manual steps (intentionally NOT automated):"'
-      - 'echo "  1. task cli:npm:pack       # produce the npm tarball, inspect it"'
-      - 'echo "  2. task cli:npm:publish    # publish to npm (public)"'
-      - 'echo "  3. task publish:central    # publish lib to Maven Central (needs creds)"'
+      - 'echo "Publishing is CI-driven (release.yml on a v* tag) — NOTHING is published locally:"'
+      - 'echo "  1. task cli:stage-darwin-x64   # ONLY if cli/ or core/ code changed since last stage"'
+      - 'echo "  2. bump version, commit, tag v<x.y.z>, push  ->  release.yml does Maven Central + all 5 npm + launcher via OIDC"'
       - 'echo "========================================================="'
