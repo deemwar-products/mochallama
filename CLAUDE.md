@@ -13,8 +13,8 @@ list streaming/tool-calling as "deferred" but both shipped).
 One published library so any dev can: (a) drop a dependency into a plain Java app, or
 (b) a Spring Boot app (autoconfig'd OpenAI `/v1/chat/completions`), or (c) `npx` a CLI
 chat — all backed by local llama.cpp, no native install dance. Plus a demo app + web UI
-and live docs. Demo + docs + local Maven already work; **public publish is not done** —
-see "Publish state" below.
+and live docs. **Public publish is live** — Maven Central (`io.github.deemwario`) and npm
+(`@deemwario`), all CI-driven; see "How we release" below.
 
 ## Modules (5 Gradle subprojects — `settings.gradle`)
 - **core** — FFM bindings + `ChatEngine` + `MochallamaClient` + C++ bridge
@@ -45,32 +45,43 @@ see "Publish state" below.
 - `task app:run` — demo app + web UI
 - `task publish:local` — core+starter+spring-ai → `~/.m2` (works today, host arch only)
 - `task cli:stage-darwin-x64` — build the Intel jlink image locally + upload to the `cli-darwin-x64` GitHub release (gh, no npm); CI downloads it to publish the darwin-x64 npm pkg via OIDC. npm itself is **never** published locally — `release.yml` does all 5 platforms + launcher via OIDC on a `v*` tag.
-- `task publish:central` — **STUB, `exit 1`** — needs creds + signing
-- `task release` — build+test+publish-local+jlink, prints manual next steps (no auto-publish)
+- `task cli:stage-darwin-x64` — (see above) re-stage the Intel image; only when cli/core code changed
+- `task publish:central` — **STUB, `exit 1`** — local Central push is unused; CI does Central now
+- `task release` — local build+test+publish-local+jlink convenience; does NOT publish (CI does)
 
-## Publish state (as of v0.1.0)
-- `v0.1.0` tagged + pushed, but the **release.yml run FAILED (~24h) → the GitHub Release
-  has ZERO assets.** Nothing to download, so the "build in CI → download → publish locally"
-  flow (npm + Maven Central) cannot proceed.
-- Works: build+test green on mac; darwin-aarch64 + darwin-x86_64 build green in CI;
-  `publish:local`; demo; docs on Pages (https://deemwar-products.github.io/mochallama/).
+## How we release (two-tier, CI-driven, NOTHING published from a laptop)
+Group `io.github.deemwario` on Maven Central; npm scope `@deemwario`. Native compile
+and public publish are decoupled — see [[two-tier-native-release]] in memory.
 
-### Blockers to a real public release
-1. **CI native OOM/hang — FIXED 2026-06-02.** Linux fast-fail ("runner received a
-   shutdown signal" at 83%) and the macos-13 24h hang were one cause: unbounded
-   `cmake --build --parallel` OOM'd the runner. Fixed in `core/build.gradle`
-   (cap to 2 jobs via `-PnativeJobs`, build only `llamabridge`). Validating on
-   branch `ci/fix-tier1-workflows`.
-2. **Windows leg fails** — bridge `CMakeLists` has mac-isms (Accelerate/`@loader_path`);
-   `continue-on-error: true` so non-blocking. Deferred to v0.1.1.
-3. **`build.yml` over-triggers — FIXED.** Trimmed to a single ubuntu compile check
-   (`compileJava -x buildNative`); heavy matrix now only in `release.yml`.
-4. **Maven Central not set up** (human-gated) — Central Portal account claiming
-   `io.github.deemwario` (GitHub-verified) + GPG key → `CENTRAL_PORTAL_USERNAME/TOKEN`,
-   `SIGNING_KEY/PASSWORD`; switch group `tools.deemwar` → `io.github.deemwario`.
-5. **npm `@deemwario` org publish rights** (human-gated) — `npm login` + org access.
-6. **10 open dependabot PRs** — some major/risky (Spring Boot 4.0.6, jakarta 3,
-   download-artifact 8). Triage, don't auto-merge.
+- **Tier 1 `natives.yml` (rare):** builds the per-platform native closure (`llamabridge`
+  + llama.cpp `b9371`) → durable **`natives-b9371`** prerelease. Triggers only on
+  `core/src/main/cpp/**`. CI matrix = linux-x64, linux-arm64, darwin-arm64, windows;
+  **darwin-x86_64 has no CI runner → seeded locally** (`task native` → `gh release upload`).
+- **Staged Intel CLI image (local, gh-only):** darwin-x64 has no Intel CI runner, so
+  `task cli:stage-darwin-x64` builds + load-smokes the jlink image once on a Mac and
+  uploads it to the durable **`cli-darwin-x64`** prerelease (uses `gh`, never npm → no 2FA).
+  Re-stage ONLY when `cli/` or `core/` code changes — version bumps alone don't need it.
+- **Tier 2 `release.yml` (every `v*` tag):** **never compiles.** Downloads both releases,
+  stages the natives (satisfies `buildNative`'s `onlyIf` guard so nothing builds), then:
+  `publish-maven` (one Linux runner → classifier jars + `-platform` POM → signed Central
+  bundle, `publishingType=AUTOMATIC`); `build-cli` (jlink the 4 CI platforms) + `cli-darwin-x64`
+  (download staged image, `npm pack` on ubuntu); `publish-npm` (**OIDC trusted publishing**,
+  all 5 platforms + launcher last, idempotent skip of already-published `name@version`);
+  `release` (attach tarballs + native zips + app fat jar to the GitHub Release).
+
+**To cut a release:** (1) if cli/core code changed, `task cli:stage-darwin-x64`; (2) bump
+`version` in `build.gradle` + every `cli/npm*/package.json` (incl. launcher
+`optionalDependencies`); (3) commit, `git tag vX.Y.Z`, `git push origin main vX.Y.Z`.
+**One-time per package:** enable Trusted Publisher on npmjs.com (Settings → Trusted
+Publisher → GitHub Actions → repo + `release.yml`). Repo secrets `SIGNING_KEY`,
+`SIGNING_PASSWORD`, `CENTRAL_USERNAME`, `CENTRAL_PASSWORD` drive Central.
+
+### Status
+- **Maven Central live at 0.1.4** (all 3 artifacts, every platform via the `-platform` jar).
+- **npm: 4/5 platforms live at 0.1.4 via OIDC**; darwin-x64 + launcher were stuck at 0.1.1
+  (old local-publish + npm 2FA) — fixed by the staged-image flow, shipping in **0.1.5**.
+- Windows native + npm leg: `experimental`/`continue-on-error` (non-blocking).
+- Docs on Pages: https://deemwar-products.github.io/mochallama/
 
 ## GraalVM native-image — deferred (FFM-in-native-image GA only on GraalVM-25 + macOS-AArch64; host is Intel).
 
