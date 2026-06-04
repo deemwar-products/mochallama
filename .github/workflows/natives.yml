@@ -119,7 +119,7 @@ jobs:
           Get-ChildItem dist-natives
 
       - name: Upload natives artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: natives-${{ matrix.native_key }}
           path: dist-natives/*.zip
