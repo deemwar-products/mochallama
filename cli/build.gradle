@@ -25,6 +25,9 @@ dependencies {
     // native libs — otherwise NativeLoader reports "(none)" at runtime.
     runtimeOnly project(path: ':core', configuration: 'hostNatives')
     implementation 'info.picocli:picocli:4.7.7'
+    // Session persistence (ChatSession <-> JSON). jackson-databind is already on
+    // the runtime classpath transitively via core, but not the compile classpath.
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
     annotationProcessor 'info.picocli:picocli-codegen:4.7.7'
 }
 
