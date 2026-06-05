@@ -1,7 +1,7 @@
 # java-plain
 
 A minimal, plain-Java example (no Spring, no framework) that consumes the published
-**mochallama 0.1.1** artifacts from Maven Central.
+**mochallama 0.1.5** artifacts from Maven Central.
 
 It uses `ChatEngine` from `mochallama-core` to load a local GGUF model and run a single
 chat completion. The native llama.cpp libraries are pulled in transitively at runtime via
@@ -11,8 +11,8 @@ mochallama is required.
 ## Dependencies
 
 ```
-implementation 'io.github.deemwario:mochallama-core:0.1.2'      // ChatEngine API
-runtimeOnly    'io.github.deemwario:mochallama-core-platform:0.1.2'  // native libs
+implementation 'io.github.deemwario:mochallama-core:0.1.5'      // ChatEngine API
+runtimeOnly    'io.github.deemwario:mochallama-core-platform:0.1.5'  // native libs
 ```
 
 Both are resolved from Maven Central (`mavenCentral()`).

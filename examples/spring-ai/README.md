@@ -1,7 +1,7 @@
 # Spring AI + mochallama example
 
 A standalone Spring Boot app that pulls the mochallama Spring AI adapter from
-Maven Central (`io.github.deemwario:*:0.1.2`). The starter + adapter
+Maven Central (`io.github.deemwario:*:0.1.5`). The starter + adapter
 autoconfigure a Spring AI `ChatClient` backed by a local llama.cpp model — no
 external LLM service required. The GGUF model is downloaded on first run to
 `~/.chatbot_models`.

@@ -8,9 +8,9 @@ java { toolchain { languageVersion = JavaLanguageVersion.of(22) } }
 ext { springAiVersion = '1.0.8' }
 dependencyManagement { imports { mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}" } }
 dependencies {
-    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.2'
-    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.2'
-    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.2'
+    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.5'
+    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.5'
+    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.5'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.ai:spring-ai-client-chat'
 }
