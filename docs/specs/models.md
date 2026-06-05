@@ -1,80 +1,132 @@
-# Model profiles
+---
+title: Models & profiles
+---
 
-**Tool-callers only — now machine-enforced.** The lineup is deliberately limited
-to GGUFs that ship a tool-capable chat template, because the service exposes
-tool/function calling (`/v1/chat/completions` with `tools`). This is no longer
-just a curated list: the native bridge and `ChatEngine` **refuse to load** any
-model whose chat template does not support tool calling (it throws
-`LlamaException(MODEL_NOT_TOOL_CAPABLE)`; the bridge returns NULL). Models
-without a reliable tool template (notably the Gemma GGUFs, and Llama-3.2 1B/3B
-which are only partial) were dropped from the curated set and would in any case
-be rejected at load. The detection mechanism and HF fetch/verify flow are
-specified in [tool-calling-support.md](tool-calling-support.md).
+# Models & profiles
 
-`application.properties` ships with **Qwen2.5-1.5B-Instruct (Q4_K_M)** as the
-default. It is chosen because it is the *proven* tool-caller in this lineup —
-the native agent's tool test passed on this exact GGUF — and it is also the
-smallest/fastest kept model (~1.1 GB), so first boot is quick. Step up to
-`qwen2.5-3b` for stronger quality with the same Qwen2.5 tool template.
+Reference for which models mochallama loads, how to point it at your own GGUF,
+where models are cached, and the load-time error contract. The lineup is
+**tool-callers only** — non-tool models are rejected at load, by design (the
+reasoning lives in [tool-calling-support.md](tool-calling-support.md)).
 
-To switch models, activate a Spring profile that points `llamacpp.model.url` /
-`llamacpp.model.filename` at a different GGUF.
+## Quickstart
+
+Pull a model and chat with no Java and no model files of your own — the CLI
+ships its own JDK-22 runtime image and downloads the default GGUF on first run:
+
+```bash
+# default model is qwen2.5-1.5b (~1.1 GB, downloaded once)
+npx @deemwario/mochallama chat -m qwen2.5-1.5b
+```
+
+From a JVM app, point `ChatEngine` at any tool-capable GGUF:
+
+::: code-group
+
+```groovy [build.gradle]
+implementation 'io.github.deemwario:mochallama-core:0.1.6'
+runtimeOnly    'io.github.deemwario:mochallama-core-platform:0.1.6'
+```
+
+```xml [pom.xml]
+<dependency>
+  <groupId>io.github.deemwario</groupId>
+  <artifactId>mochallama-core</artifactId>
+  <version>0.1.6</version>
+</dependency>
+<dependency>
+  <groupId>io.github.deemwario</groupId>
+  <artifactId>mochallama-core-platform</artifactId>
+  <version>0.1.6</version>
+  <scope>runtime</scope>
+</dependency>
+```
+
+:::
+
+In a Spring Boot app the model is selected by configuration; activate a profile
+or set `llamacpp.model.*`. The id reported on `GET /v1/models` is derived from
+the model filename, so switching profiles also switches the OpenAI-compatible
+model id.
 
 ```sh
 ./gradlew bootRun --args='--spring.profiles.active=qwen2.5-3b'
 ```
 
-Profiles available today (all tool-capable):
+## Built-in profiles
 
-- `qwen2.5-1.5b` (same as default, explicit)
-- `qwen2.5-3b`
-- `qwen3-4b` (renamed from the old `qwen3.5-4b` id — same model)
-- `phi-4-mini`
+All four are tool-capable and quantized **Q4_K_M**. The default is
+`qwen2.5-1.5b` — the smallest/fastest kept model and the proven tool-caller in
+this lineup, so first boot is quick.
 
-The first run downloads the GGUF into `~/.chatbot_models/` (or whatever
-`llamacpp.model.cache-dir` points at) and reuses it after that. The model id
-reported on `GET /v1/models` is derived from the filename, so switching
-profiles also switches the OpenAI-compatible model id.
+| Profile        | HF repo                               | Filename                              | Size on disk | RAM (approx) | Gen tok/s (CPU, approx) | Tool calling | Notes |
+|----------------|---------------------------------------|---------------------------------------|--------------|--------------|-------------------------|--------------|-------|
+| `qwen2.5-1.5b` | `Qwen/Qwen2.5-1.5B-Instruct-GGUF`     | `qwen2.5-1.5b-instruct-q4_k_m.gguf`   | 1.1 GB       | ~2 GB        | ~12                     | Yes (proven) | **Default.** Smallest + fastest kept model; native agent tool test passed on this exact GGUF. |
+| `qwen2.5-3b`   | `Qwen/Qwen2.5-3B-Instruct-GGUF`       | `qwen2.5-3b-instruct-q4_k_m.gguf`     | 2.1 GB       | ~3 GB        | ~7                      | Yes          | Quality step up; same Qwen2.5 tool template. |
+| `qwen3-4b`     | `unsloth/Qwen3-4B-Instruct-2507-GGUF` | `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`  | 2.5 GB       | ~4.5 GB      | ~9.8 (measured)         | Yes          | Strongest general-purpose 4B in the lineup; strong tool calling. Profile id is historical; the model is "Qwen3". |
+| `phi-4-mini`   | `unsloth/Phi-4-mini-instruct-GGUF`    | `Phi-4-mini-instruct-Q4_K_M.gguf`     | 2.5 GB       | ~3.5 GB      | ~10.6 (measured)        | Yes          | Fastest 4B-class in the lineup; ships a tool-capable chat template. |
+
+To switch models in a Spring app, activate the matching profile (the names
+above) or set `llamacpp.model.url` / `llamacpp.model.filename` directly.
+
+::: tip Why the defaults are small
+Q4_K_M weights load fast and fit in a few GB of RAM, so a plain `npx` or
+`bootRun` reaches first-token quickly on a laptop CPU with no GPU. The rationale
+for the curated, tool-only lineup is in
+[tool-calling-support.md](tool-calling-support.md) — this page is the reference.
+:::
 
 ## Load any model by Hugging Face id
 
-You are not limited to the four built-in profiles. Point the starter at **any
-tool-capable Hugging Face GGUF repo** by id and it resolves the right `.gguf`
-file (preferred quant `Q4_K_M`, falling back through `Q5_K_M → Q4_0 → …`) via
-the Hub API, then downloads it into the shared cache:
+You are not limited to the four built-in profiles. Point at **any tool-capable
+Hugging Face GGUF repo** by id (`org/repo`); the resolver picks the preferred
+quant (`Q4_K_M`, falling back through `Q5_K_M → Q4_0 → …`) via the Hub API and
+downloads it into the shared cache.
 
-```properties
+::: code-group
+
+```properties [Spring (application.properties)]
 # Alternative to llamacpp.model.url + .filename
 llamacpp.model.hf-id=Qwen/Qwen2.5-3B-Instruct-GGUF
 llamacpp.model.quant=Q4_K_M
 ```
 
-**Resolution precedence:** explicit `llamacpp.model.url` + `.filename`  >
-`llamacpp.model.hf-id` + `.quant`  >  the built-in default in
-`application.properties`.
-
-The CLI accepts the same forms for `--model` — a built-in profile name, a HF id
-(`org/repo`), or a local `.gguf` path:
-
-```bash
-mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF
+```bash [CLI]
+# --model accepts a profile name, an HF id, OR a local .gguf path
+npx @deemwario/mochallama chat --model Qwen/Qwen2.5-3B-Instruct-GGUF
+npx @deemwario/mochallama chat --model /path/to/your-model.gguf
 ```
 
-Both the starter and the CLI share one resolver/downloader
-(`tools.deemwar.mochallama.hf.HuggingFaceModels`) and one `~/.chatbot_models`
-cache. Tool capability is enforced at load (see
-[tool-calling-support.md](tool-calling-support.md)) — a non-tool HF id is
-rejected, not silently downgraded. Gated/private repos fail early unless an
-`HF_TOKEN` is set (and the license accepted on Hugging Face).
+:::
 
-## Lineup
+**Resolution precedence (Spring):** explicit `llamacpp.model.url` +
+`.filename`  >  `llamacpp.model.hf-id` + `.quant`  >  the built-in default.
 
-| Profile        | HF repo                               | Filename                              | Size on disk | RAM (approx) | Gen tok/s (CPU, approx) | Tool calling | Notes |
-|----------------|---------------------------------------|---------------------------------------|--------------|--------------|-------------------------|--------------|-------|
-| `qwen2.5-1.5b` | `Qwen/Qwen2.5-1.5B-Instruct-GGUF`     | `qwen2.5-1.5b-instruct-q4_k_m.gguf`   | 1.1 GB       | ~2 GB        | ~12                     | Yes (proven) | **Default.** Smallest + fastest kept model and the proven tool-caller (native agent tool test passed on this file). Qwen2.5 instruct chat template ships tool support. |
-| `qwen2.5-3b`   | `Qwen/Qwen2.5-3B-Instruct-GGUF`       | `qwen2.5-3b-instruct-q4_k_m.gguf`     | 2.1 GB       | ~3 GB        | ~7                      | Yes          | Quality step up from the 1.5B; same Qwen2.5 tool template. |
-| `qwen3-4b`     | `unsloth/Qwen3-4B-Instruct-2507-GGUF` | `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`  | 2.5 GB       | ~4.5 GB      | ~9.8 (measured)         | Yes          | Strongest general-purpose 4B in the lineup. Strong tool calling (91.4% BFCL in benchmarks/results/qwen3.5-4b_std.json). Bench id is historical; the model is "Qwen3". |
-| `phi-4-mini`   | `unsloth/Phi-4-mini-instruct-GGUF`    | `Phi-4-mini-instruct-Q4_K_M.gguf`     | 2.5 GB       | ~3.5 GB      | ~10.6 (measured)        | Yes          | Fastest 4B-class in the lineup. Phi-4-mini ships a tool-capable chat template; the earlier note about `--jinja` breakage applied to a stock-CLI flag path the native bridge does not use. |
+Both the starter and the CLI share one resolver/downloader and one model cache,
+so a model pulled by either is reused by the other.
+
+## Model cache
+
+Models cache under **`~/.chatbot_models`** (overridable in Spring via
+`llamacpp.model.cache-dir`). The first run downloads the GGUF there and reuses
+it after that. The CLI and the Spring app share this directory.
+
+## Load-time error contract
+
+Model selection fails **fast and explicitly** rather than degrading silently.
+These are documented, stable error codes:
+
+| Code | When it fires | Behavior |
+|------|---------------|----------|
+| `MODEL_NOT_TOOL_CAPABLE` | The GGUF's chat template does not support tool calling (e.g. Gemma GGUFs; Llama-3.2 1B/3B are only partial). | The model is **rejected at load** — never silently downgraded to a non-tool fallback. In Java, `ChatEngine`/`MochallamaClient` throw `LlamaException(MODEL_NOT_TOOL_CAPABLE)`; the native bridge returns `NULL`. |
+| `MODEL_GATED` | The repo is gated/private and no accepted license / `HF_TOKEN` is available. | **Fails early** at resolve/download time. Set `HF_TOKEN` (and accept the license on Hugging Face) to use a gated repo. |
+
+::: warning Tool-callers only
+A non-tool HF id is rejected, not silently accepted and downgraded. This is the
+core contract of the library — see
+[tool-calling-support.md](tool-calling-support.md) for the detection mechanism
+and the HF fetch/verify flow.
+:::
 
 ### Dropped (not tool-capable / unreliable)
 
@@ -84,35 +136,60 @@ rejected, not silently downgraded. Gated/private repos fail early unless an
 | `llama-3.2-1b` (`mukel/Llama-3.2-1B-Instruct-GGUF`) | Only partial tool support; not reliable enough to emit tool-call JSON. |
 | `llama-3.2-3b` (`mukel/Llama-3.2-3B-Instruct-GGUF`) | Same partial tool support as the 1B. |
 
-### How the numbers were chosen
+## CLI: models, chat & sessions
+
+`mochallama models` lists the built-in profiles. `mochallama chat` is a real
+**multi-turn** REPL (it keeps full conversation history, not amnesiac
+single-turns) and **persists conversations as sessions**.
+
+```bash
+npx @deemwario/mochallama models                       # list profiles
+npx @deemwario/mochallama chat -m qwen2.5-1.5b         # start a chat
+npx @deemwario/mochallama sessions                      # list saved sessions
+npx @deemwario/mochallama chat --resume <id>           # continue a prior chat
+```
+
+Sessions persist as one JSON file per session under
+**`~/.chatbot_models/sessions/<id>.json`**. `mochallama sessions` lists them
+(id, model, turns, last-updated); resume a prior conversation with
+`chat --resume <id>` (a resumed session decides its own model). `mochallama
+chat --no-save` runs an ephemeral session that is never written to disk.
+
+`chat` options:
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `-m`, `--model` | `qwen2.5-1.5b` | Profile name, HF id (`org/repo`), or local `.gguf` path. |
+| `--resume <id>` | — | Continue a saved session (see `mochallama sessions`). |
+| `--no-save` | off | Ephemeral session — nothing written to disk. |
+| `--max-tokens` | `256` | Max tokens per reply. |
+| `--temperature` | `0.7` | Sampling temperature. |
+
+In-REPL slash commands:
+
+| Command | Effect |
+|---------|--------|
+| `/help` | List the commands. |
+| `/reset` | Clear the conversation history (keeps the session id). |
+| `/exit` | Quit (EOF / Ctrl-D also quits). |
+
+## Notes on the numbers
 
 - **Size on disk** is the HF-reported file size for the listed `.gguf`.
-- **RAM** is a rule-of-thumb: Q4 weights × ~1.3 plus the KV cache for
-  `context-size`. Real usage will be higher for longer contexts.
-- **Gen tok/s** marked *measured* comes from
-  `/llama-cpu-benchmarks/results/<cell>_std.json` (single-stream, stock
-  `ghcr.io/ggml-org/llama.cpp:full`, Q4_K_M, fp16 KV, AVX2 CPU). The 1B / 3B
-  numbers are extrapolated rules of thumb (1B ≈ 7 tok/s, 3B ≈ 3 tok/s on a
-  typical 4-core desktop CPU) — not measured here.
-- All numbers are approximate. Your CPU, RAM, and thread count matter more
-  than the model.
+- **RAM** is a rule-of-thumb: Q4 weights × ~1.3 plus the KV cache for the
+  configured context size. Longer contexts use more.
+- **Gen tok/s** marked *measured* is single-stream on a stock AVX2 CPU build,
+  Q4_K_M, fp16 KV. The other figures are extrapolated rules of thumb, not
+  measured here.
 
-### Tuning per profile
+::: warning Honest CPU latency
+These are small Q4 models on **CPU**. Expect roughly **single-digit to ~12
+tokens/sec** on a typical laptop/desktop CPU — readable and interactive, but not
+GPU-fast. Your CPU, RAM, and thread count matter more than the choice of model.
+mochallama runs in-process via llama.cpp; it does not auto-offload to a GPU the
+way a standalone server might. Pick the smallest model that meets your quality
+bar.
+:::
 
-Each profile sets `llamacpp.model.context-size` and `llamacpp.model.max-tokens`
-appropriate for the model (smaller context on the 1.5B to keep RAM low; larger
-on the 4B-class models that benefit from it). The full generation default set
-(`temperature`, `top-k`, `top-p`, `min-p`, `repeat-penalty`, `seed`,
-`max-tokens`) is bound from `llamacpp.model.*` in the default
-`application.properties` and overridden per request by the OpenAI endpoint — see
-`streaming-and-tools.md`.
-
-### Coordinates verified
-
-All four shipped GGUF resolve URLs were HEAD-checked for anonymous download:
-each returns `302 → 200` via HuggingFace's public xet-bridge
-(`X-Xet-Cas-Uid=public`). The Qwen2.5 defaults come from the official
-`Qwen/Qwen2.5-*-Instruct-GGUF` repos (single-file `q4_k_m`); `qwen3-4b` and
-`phi-4-mini` come from `unsloth/*` (the `bartowski/*` equivalents 401 on
-anonymous fetch). No gated/private models are referenced in any shipped profile
-— the project cannot prompt for HF auth tokens at startup.
+All four shipped GGUF resolve URLs are HEAD-checked for anonymous download — no
+gated/private models are referenced in any built-in profile.

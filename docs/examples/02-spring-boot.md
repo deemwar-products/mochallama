@@ -9,23 +9,23 @@ autoconfigured `ChatModel` / `ChatClient`.
 
 ```groovy
 dependencies {
-    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.2'
+    implementation 'io.github.deemwario:mochallama-spring-boot-starter:0.1.6'
 
     // Native llama.cpp libs ship SEPARATELY (the core jar is Java-only).
     // Easiest — all platforms' natives, the right one loads at runtime:
-    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.2'
+    runtimeOnly 'io.github.deemwario:mochallama-core-platform:0.1.6'
     // ...OR lean: just your deploy platform's classifier (smaller), e.g.:
-    // runtimeOnly 'io.github.deemwario:mochallama-core:0.1.2:natives-linux-x86_64'
+    // runtimeOnly 'io.github.deemwario:mochallama-core:0.1.6:natives-linux-x86_64'
 
     // Optional — Spring AI ChatModel / ChatClient adapter.
     // Spring AI is compileOnly in the adapter, so you pin the version here.
-    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.2'
+    implementation 'io.github.deemwario:mochallama-spring-ai:0.1.6'
     implementation 'org.springframework.ai:spring-ai-client-chat:1.0.8'
 }
 ```
 
-The starter pulls in `mochallama-core` (the Java engine). As of v0.1.0 the
-native libs are **not** in the core jar — they ship as separate per-platform
+The starter pulls in `mochallama-core` (the Java engine). The native libs are
+**not** in the core jar — they ship as separate per-platform
 artifacts so you download only what you need:
 
 - `mochallama-core-platform` — zero-config, bundles **all** platforms' natives
@@ -42,14 +42,13 @@ The Panama FFM bridge needs JDK 22 and native-access enabled:
 
 ```
 --enable-native-access=ALL-UNNAMED
---add-modules=jdk.incubator.vector
 ```
 
 With the Spring Boot Gradle plugin:
 
 ```groovy
 bootRun {
-    jvmArgs = ['--enable-native-access=ALL-UNNAMED', '--add-modules=jdk.incubator.vector']
+    jvmArgs = ['--enable-native-access=ALL-UNNAMED']
 }
 ```
 
