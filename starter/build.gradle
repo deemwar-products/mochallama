@@ -17,7 +17,7 @@ dependencies {
 
     // Auto-configuration + @Value/@Bean/@PostConstruct lifecycle wiring.
     implementation 'org.springframework.boot:spring-boot-autoconfigure:3.3.1'
-    implementation 'jakarta.annotation:jakarta.annotation-api:2.1.1'
+    implementation 'jakarta.annotation:jakarta.annotation-api:3.0.0'
 
     // Inference observability out of the box: Actuator pulls in Micrometer core,
     // so MeterRegistry + HealthIndicator are always available to the starter.
