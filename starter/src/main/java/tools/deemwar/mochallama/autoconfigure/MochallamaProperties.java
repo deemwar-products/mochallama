@@ -32,7 +32,9 @@ public class MochallamaProperties {
      * {@code Qwen/Qwen2.5-3B-Instruct-GGUF}) — an ALTERNATIVE to explicit
      * {@code url}/{@code filename}. When set (and no explicit url/filename), the
      * service resolves the {@code .gguf} via the Hub API and downloads it.
-     * Resolution precedence: explicit url/filename &gt; hf-id+quant &gt; built-in default.
+     * Resolution precedence: explicit url/filename &gt; hf-id+quant. A model is
+     * required — if none of url/filename/hf-id is set, the service fails fast at
+     * startup with "no model configured" (there is no built-in default).
      */
     private String hfId;
 
