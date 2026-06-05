@@ -47,15 +47,28 @@ npx @deemwario/mochallama chat -m qwen2.5-1.5b
 
 A real multi-turn REPL — conversations persist as resumable sessions (see [CLI](#cli) below).
 
-### 2. Spring Boot — one dependency
+### 2. Spring Boot — one dependency + a line of config
 
 ```kotlin
 implementation("io.github.deemwario:mochallama-spring-boot-starter:0.1.6")
 runtimeOnly("io.github.deemwario:mochallama-core-platform:0.1.6")   // native libs for your platform
 ```
 
-`@AutoConfiguration` gives you an OpenAI-compatible server **in your app's process**. Start the app,
-then point any OpenAI client at it:
+**Configure** which model to load — a Hugging Face id is the simplest (it resolves and caches the
+GGUF on first start). In `src/main/resources/application.properties`:
+
+```properties
+# a tool-capable GGUF: a Hugging Face id, or an explicit url + filename
+llamacpp.model.hf-id=Qwen/Qwen2.5-1.5B-Instruct-GGUF
+# llamacpp.model.url=https://.../qwen2.5-1.5b-instruct-q4_k_m.gguf
+# llamacpp.model.filename=qwen2.5-1.5b-instruct-q4_k_m.gguf
+```
+
+`@AutoConfiguration` then exposes an OpenAI-compatible server **in your app's process**. The model
+downloads on first start into `~/.chatbot_models` and loads asynchronously — endpoints return `503`
+(`{"state":"DOWNLOADING"|"LOADING"}`) until `state: READY`.
+
+**Send** — start the app, then point any OpenAI client at it:
 
 ```bash
 curl http://localhost:8080/v1/chat/completions \

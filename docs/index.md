@@ -112,7 +112,16 @@ runtimeOnly("io.github.deemwario:mochallama-core-platform:0.1.6")
 
 :::
 
-Start the app, then point any OpenAI client at it. `POST /v1/chat/completions` handles non-streaming, `stream:true` SSE, and `tools` / `tool_choice`; `GET /v1/models` lists the loaded model.
+Tell it which model to load — a Hugging Face id is the simplest (it resolves + caches the GGUF on first start). In `src/main/resources/application.properties`:
+
+```properties
+llamacpp.model.hf-id=Qwen/Qwen2.5-1.5B-Instruct-GGUF
+# or an explicit url + filename:
+# llamacpp.model.url=https://.../qwen2.5-1.5b-instruct-q4_k_m.gguf
+# llamacpp.model.filename=qwen2.5-1.5b-instruct-q4_k_m.gguf
+```
+
+Start the app (the model loads asynchronously — endpoints return `503` until `state: READY`), then point any OpenAI client at it. `POST /v1/chat/completions` handles non-streaming, `stream:true` SSE, and `tools` / `tool_choice`; `GET /v1/models` lists the loaded model.
 
 ```bash
 curl http://localhost:8080/v1/chat/completions \
