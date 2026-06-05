@@ -51,6 +51,9 @@ core/src/main/resources/native/*/*.dll
 core/src/main/resources/native/*/*.metallib
 
 ### Release / distribution build output ###
+# Marketing drafts — launch copy (X/HN/blog/reddit), kept local, never committed.
+marketing/
+
 # jlink runtime image (Badass Runtime) — produced by `./gradlew :cli:jlink`
 cli/build/
 # the staged Intel jlink image zip produced by `task cli:stage-darwin-x64`
