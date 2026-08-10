@@ -16,12 +16,12 @@ dependencies {
     api project(':core')
 
     // Auto-configuration + @Value/@Bean/@PostConstruct lifecycle wiring.
-    implementation 'org.springframework.boot:spring-boot-autoconfigure:3.3.1'
+    implementation 'org.springframework.boot:spring-boot-autoconfigure:4.0.6'
     implementation 'jakarta.annotation:jakarta.annotation-api:2.1.1'
 
     // Inference observability out of the box: Actuator pulls in Micrometer core,
     // so MeterRegistry + HealthIndicator are always available to the starter.
-    implementation 'org.springframework.boot:spring-boot-starter-actuator:3.3.1'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator:4.0.6'
 
     // Optional Prometheus scrape endpoint — the consumer opts in by adding this
     // dependency themselves; then /actuator/prometheus lights up.
@@ -29,7 +29,7 @@ dependencies {
 
     // OpenAI-compatible REST controller is optional — only wired when spring-web
     // is on the consumer's classpath.
-    compileOnly 'org.springframework.boot:spring-boot-starter-web:3.3.1'
+    compileOnly 'org.springframework.boot:spring-boot-starter-web:4.0.6'
 
     // DTO (de)serialisation.
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
