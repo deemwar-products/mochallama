@@ -32,8 +32,8 @@ dependencies {
     //                             ChatOptions and the tool-calling API
     //                             (ToolCallingChatOptions, ToolCallback,
     //                              ToolDefinition, FunctionToolCallback).
-    compileOnly 'org.springframework.ai:spring-ai-client-chat:1.0.8'
-    compileOnly 'org.springframework.ai:spring-ai-model:1.0.8'
+    compileOnly 'org.springframework.ai:spring-ai-client-chat:1.1.7'
+    compileOnly 'org.springframework.ai:spring-ai-model:1.1.7'
 
     // Project Reactor (Flux/Schedulers) is needed at compile time for the
     // streaming ChatModel.stream(...) override. It's COMPILE-ONLY too — Spring AI
