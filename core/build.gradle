@@ -258,6 +258,12 @@ java {
 // ---------------------------------------------------------------------
 def nativeRoot = file("$projectDir/src/main/resources/native")
 
+// The natives jars carry compiled llama.cpp/ggml. MIT requires its notice to
+// accompany every copy, so ship the upstream LICENSE alongside the binaries —
+// a jar of llama.cpp bytes with no llama.cpp notice does not satisfy it.
+// Refresh from the new tag whenever llamaCppTag is bumped.
+def nativeLicenseDir = file("$projectDir/src/main/native-licenses")
+
 // Keep natives OUT of the Java jar + sources jar — they are separate artifacts.
 tasks.named('jar')        { exclude 'native/**' }
 tasks.named('sourcesJar') { exclude 'native/**' }
@@ -277,6 +283,8 @@ def nativeJarTasks = platformsToPackage.collect { plat ->
         // Place entries under native/<platform>/ so they sit on the classpath
         // exactly where NativeLoader looks (classpath:/native/<platform>/).
         from(nativeRoot) { include "${plat}/**"; into 'native' }
+        // Upstream MIT notice for the llama.cpp/ggml binaries in this jar.
+        from(nativeLicenseDir) { include 'LICENSE-llama.cpp'; into 'META-INF/licenses' }
     }
 }
 // Expose the host platform's native jar so sibling projects (the demo app) can
